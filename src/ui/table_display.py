@@ -212,9 +212,8 @@ class InteractiveTableDisplay:
             return f'''
             <img src="{cell_value}" 
                  alt="Image {image_key}" 
-                 class="clickable-image" 
-                 onclick="showImage('{image_key}', '{col_name}', {row_idx})"
-                 style="max-width: 100px; max-height: 100px; object-fit: contain;">
+                 style="max-width: 100px; max-height: 100px; object-fit: contain; cursor: pointer; border: 1px solid #ddd; border-radius: 4px;"
+                 title="Click to view full size">
             '''
         
         # Check if this is an error message

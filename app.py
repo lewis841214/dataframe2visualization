@@ -99,29 +99,70 @@ def main():
             table_controls = TableControls()
             image_viewer = ImageModalViewer()
             
-            # Render controls
-            controls_result = table_controls.render_controls(df, result['column_metadata'])
-            
-            # Get display DataFrame with controls applied
+            # Get display DataFrame with processed images
             display_df = processor.get_display_dataframe()
             
-            # Apply controls to the display DataFrame
+            # Render controls on the display DataFrame (which has base64 images)
+            controls_result = table_controls.render_controls(display_df, result['column_metadata'])
+            
+            # Get the final DataFrame with controls applied
             final_df = controls_result['final_data']
             
             # Render table with controlled data
             table_display.render_table(final_df, result['column_metadata'], result['processed_data'])
             
-            # Handle image clicks (simplified for now)
-            if st.button("Show Sample Image Viewer"):
-                # Find first image to display
-                for col_name, col_data in result['processed_data'].items():
-                    for idx, item in enumerate(col_data):
-                        if isinstance(item, dict) and item.get('type') == 'image':
-                            image_viewer.show_image_modal(item, f"{col_name}_{idx}")
-                            break
-                    else:
-                        continue
-                    break
+            # Handle image clicks
+            st.markdown("---")
+            st.markdown("### Image Viewer")
+            
+            # Create a simple image viewer using session state
+            if 'selected_image' not in st.session_state:
+                st.session_state.selected_image = None
+            
+            # Show image viewer if an image is selected
+            if st.session_state.selected_image:
+                col_name, row_idx = st.session_state.selected_image
+                if col_name in result['processed_data'] and row_idx < len(result['processed_data'][col_name]):
+                    image_data = result['processed_data'][col_name][row_idx]
+                    if isinstance(image_data, dict) and image_data.get('type') == 'image':
+                        image_viewer.show_image_modal(image_data, f"{col_name}_{row_idx}")
+                        
+                        # Add a close button
+                        if st.button("Close Image Viewer"):
+                            st.session_state.selected_image = None
+                            st.rerun()
+            
+            # Add controls to view specific images
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("Show Sample Image"):
+                    # Find first image to display
+                    for col_name, col_data in result['processed_data'].items():
+                        for idx, item in enumerate(col_data):
+                            if isinstance(item, dict) and item.get('type') == 'image':
+                                st.session_state.selected_image = (col_name, idx)
+                                st.rerun()
+                                break
+                        else:
+                            continue
+                        break
+            
+            with col2:
+                # Let users select which image to view
+                image_columns = [col for col, meta in result['column_metadata'].items() 
+                               if meta.get('contains_images', False)]
+                
+                if image_columns:
+                    selected_col = st.selectbox("Select Image Column", image_columns)
+                    if selected_col in result['processed_data']:
+                        image_count = sum(1 for item in result['processed_data'][selected_col] 
+                                       if isinstance(item, dict) and item.get('type') == 'image')
+                        if image_count > 0:
+                            selected_idx = st.selectbox("Select Image Index", range(image_count))
+                            if st.button(f"View Image {selected_idx}"):
+                                st.session_state.selected_image = (selected_col, selected_idx)
+                                st.rerun()
             
             # Cache management
             st.header("🗄️ Cache Management")

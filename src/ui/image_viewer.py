@@ -61,7 +61,7 @@ class ImageModalViewer:
                 col1, col2, col3 = st.columns([1, 3, 1])
                 with col2:
                     st.image(display_image, caption=f"Full-size image: {image_key}", 
-                            use_column_width=True)
+                            width='stretch')
             
             # Navigation and control buttons
             self._show_image_controls(image_data)
