@@ -4,6 +4,8 @@ Interactive table display module for Dataframe2Visualization.
 
 import streamlit as st
 import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
 from typing import Any, Dict, List, Optional, Tuple
 from ..config.settings import AppConfig
 
@@ -35,6 +37,9 @@ class InteractiveTableDisplay:
         
         # Handle image clicks
         self._handle_image_interactions()
+        
+        # Add scatter plot analysis
+        self.render_scatter_plot_analysis(df)
     
     def _render_table_info(self, df: pd.DataFrame, column_metadata: Dict[str, Any]) -> None:
         """
@@ -372,3 +377,277 @@ class InteractiveTableDisplay:
         """Clear the clicked image state."""
         self.clicked_image_key = None
         self.clicked_image_data = None
+    
+    def render_scatter_plot_analysis(self, df: pd.DataFrame) -> None:
+        """
+        Render scatter plot analysis interface.
+        
+        Args:
+            df: DataFrame to analyze
+        """
+        st.markdown("---")
+        st.markdown("### 📊 Scatter Plot Analysis")
+        
+        # Get numeric columns
+        numeric_cols = self._get_numeric_columns(df)
+        
+        if len(numeric_cols) < 2:
+            st.warning("⚠️ Need at least 2 numeric columns for scatter plotting.")
+            st.info(f"Available numeric columns: {numeric_cols}")
+            return
+        
+        # Column selection
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            selected_col1 = st.selectbox(
+                "Select First Column (X-axis)",
+                numeric_cols,
+                key="scatter_col1"
+            )
+        
+        with col2:
+            selected_col2 = st.selectbox(
+                "Select Second Column (Y-axis)",
+                numeric_cols,
+                key="scatter_col2"
+            )
+        
+        # Validate selection
+        is_valid, error_msg = self._validate_columns_for_plotting(df, selected_col1, selected_col2)
+        
+        if not is_valid:
+            st.error(f"❌ {error_msg}")
+            return
+        
+        # Calculate statistics
+        stats = self._calculate_correlation_statistics(df, selected_col1, selected_col2)
+        
+        if not stats:
+            st.error("❌ Unable to calculate statistics.")
+            return
+        
+        # Display statistics
+        self._display_statistics_summary(stats)
+        
+        # Display detailed statistics
+        self._display_detailed_statistics(stats, selected_col1, selected_col2)
+        
+        # Create and display scatter plot
+        self._create_scatter_plot(df, selected_col1, selected_col2, stats)
+        
+        # Display interpretation
+        self._display_correlation_interpretation(stats, selected_col1, selected_col2)
+    
+    def _get_numeric_columns(self, df: pd.DataFrame) -> List[str]:
+        """Get list of numeric columns from DataFrame."""
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        return numeric_cols
+    
+    def _validate_columns_for_plotting(self, df: pd.DataFrame, col1: str, col2: str) -> Tuple[bool, str]:
+        """Validate that selected columns are suitable for scatter plotting."""
+        if col1 not in df.columns or col2 not in df.columns:
+            return False, "One or both selected columns do not exist in the DataFrame."
+        
+        if col1 == col2:
+            return False, "Please select two different columns for scatter plotting."
+        
+        # Check if columns are numeric
+        if not pd.api.types.is_numeric_dtype(df[col1]) or not pd.api.types.is_numeric_dtype(df[col2]):
+            return False, "Both columns must be numeric for scatter plotting."
+        
+        # Check for sufficient data
+        valid_data = df[[col1, col2]].dropna()
+        if len(valid_data) < 2:
+            return False, "Insufficient data for plotting. Need at least 2 valid data points."
+        
+        return True, "Columns are valid for plotting."
+    
+    def _calculate_correlation_statistics(self, df: pd.DataFrame, col1: str, col2: str) -> Dict[str, float]:
+        """Calculate correlation and covariance between two columns."""
+        valid_data = df[[col1, col2]].dropna()
+        
+        if len(valid_data) < 2:
+            return {}
+        
+        # Calculate correlation
+        correlation = valid_data[col1].corr(valid_data[col2])
+        
+        # Calculate covariance
+        covariance = valid_data[col1].cov(valid_data[col2])
+        
+        # Calculate additional statistics
+        stats = {
+            'correlation': correlation,
+            'covariance': covariance,
+            'pearson_r': correlation,
+            'spearman_r': valid_data[col1].corr(valid_data[col2], method='spearman'),
+            'kendall_tau': valid_data[col1].corr(valid_data[col2], method='kendall'),
+            'n_points': len(valid_data),
+            'col1_mean': valid_data[col1].mean(),
+            'col1_std': valid_data[col1].std(),
+            'col2_mean': valid_data[col2].mean(),
+            'col2_std': valid_data[col2].std(),
+            'col1_min': valid_data[col1].min(),
+            'col1_max': valid_data[col1].max(),
+            'col2_min': valid_data[col2].min(),
+            'col2_max': valid_data[col2].max()
+        }
+        
+        return stats
+    
+    def _display_statistics_summary(self, stats: Dict[str, float]) -> None:
+        """Display summary statistics in metrics."""
+        st.subheader("📈 Statistical Summary")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Correlation (r)", f"{stats['correlation']:.3f}")
+        
+        with col2:
+            st.metric("Covariance", f"{stats['covariance']:.3f}")
+        
+        with col3:
+            st.metric("Data Points", stats['n_points'])
+        
+        with col4:
+            st.metric("Spearman's ρ", f"{stats['spearman_r']:.3f}")
+    
+    def _display_detailed_statistics(self, stats: Dict[str, float], col1: str, col2: str) -> None:
+        """Display detailed statistics for both columns."""
+        st.subheader("📊 Detailed Statistics")
+        
+        col1_stats, col2_stats = st.columns(2)
+        
+        with col1_stats:
+            st.write(f"**{col1} Statistics:**")
+            st.write(f"- Mean: {stats['col1_mean']:.3f}")
+            st.write(f"- Std Dev: {stats['col1_std']:.3f}")
+            st.write(f"- Range: {stats['col1_min']:.3f} to {stats['col1_max']:.3f}")
+        
+        with col2_stats:
+            st.write(f"**{col2} Statistics:**")
+            st.write(f"- Mean: {stats['col2_mean']:.3f}")
+            st.write(f"- Std Dev: {stats['col2_std']:.3f}")
+            st.write(f"- Range: {stats['col2_min']:.3f} to {stats['col2_max']:.3f}")
+    
+    def _create_scatter_plot(self, df: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float]) -> None:
+        """Create and display scatter plot with trend line."""
+        st.subheader("🎨 Scatter Plot")
+        
+        # Get valid data
+        valid_data = df[[col1, col2]].dropna()
+        
+        # Create matplotlib figure
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        # Create scatter plot
+        scatter = ax.scatter(valid_data[col1], valid_data[col2], alpha=0.6, s=50, color='steelblue')
+        
+        # Add trend line
+        if len(valid_data) > 1:
+            z = np.polyfit(valid_data[col1], valid_data[col2], 1)
+            p = np.poly1d(z)
+            ax.plot(valid_data[col1], p(valid_data[col1]), "r--", alpha=0.8, linewidth=2, label='Trend Line')
+        
+        # Customize plot
+        ax.set_xlabel(col1, fontsize=12, fontweight='bold')
+        ax.set_ylabel(col2, fontsize=12, fontweight='bold')
+        ax.set_title(f"Scatter Plot: {col1} vs {col2}", fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+        
+        # Add statistics text box
+        stats_text = f"n = {stats['n_points']}\n"
+        stats_text += f"r = {stats['correlation']:.3f}\n"
+        stats_text += f"Cov = {stats['covariance']:.3f}"
+        
+        ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, 
+               verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+        
+        plt.tight_layout()
+        
+        # Display plot
+        st.pyplot(fig)
+        plt.close(fig)
+        
+        # Add plot options
+        st.markdown("**Plot Options:**")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("📥 Download Plot as PNG"):
+                # Create plot again for download
+                fig, ax = plt.subplots(figsize=(10, 8))
+                ax.scatter(valid_data[col1], valid_data[col2], alpha=0.6, s=50, color='steelblue')
+                
+                if len(valid_data) > 1:
+                    z = np.polyfit(valid_data[col1], valid_data[col2], 1)
+                    p = np.poly1d(z)
+                    ax.plot(valid_data[col1], p(valid_data[col1]), "r--", alpha=0.8, linewidth=2, label='Trend Line')
+                
+                ax.set_xlabel(col1, fontsize=12, fontweight='bold')
+                ax.set_ylabel(col2, fontsize=12, fontweight='bold')
+                ax.set_title(f"Scatter Plot: {col1} vs {col2}", fontsize=14, fontweight='bold')
+                ax.grid(True, alpha=0.3)
+                ax.legend()
+                
+                # Save to buffer
+                import io
+                buf = io.BytesIO()
+                fig.savefig(buf, format='png', dpi=300, bbox_inches='tight')
+                buf.seek(0)
+                
+                # Create download button
+                st.download_button(
+                    label="Click to download",
+                    data=buf.getvalue(),
+                    file_name=f"scatter_plot_{col1}_vs_{col2}.png",
+                    mime="image/png"
+                )
+                plt.close(fig)
+        
+        with col2:
+            # Export statistics to CSV
+            stats_df = pd.DataFrame([stats])
+            csv = stats_df.to_csv(index=False)
+            st.download_button(
+                label="📊 Download Statistics CSV",
+                data=csv,
+                file_name=f"statistics_{col1}_vs_{col2}.csv",
+                mime="text/csv"
+            )
+    
+    def _display_correlation_interpretation(self, stats: Dict[str, float], col1: str, col2: str) -> None:
+        """Display correlation interpretation and insights."""
+        st.subheader("🔍 Correlation Interpretation")
+        
+        correlation_strength = abs(stats['correlation'])
+        if correlation_strength >= 0.8:
+            strength = "very strong"
+        elif correlation_strength >= 0.6:
+            strength = "strong"
+        elif correlation_strength >= 0.4:
+            strength = "moderate"
+        elif correlation_strength >= 0.2:
+            strength = "weak"
+        else:
+            strength = "very weak"
+        
+        direction = "positive" if stats['correlation'] > 0 else "negative"
+        
+        st.info(f"""
+        **Correlation Analysis:**
+        - The correlation coefficient (r = {stats['correlation']:.3f}) indicates a {strength} {direction} relationship between {col1} and {col2}.
+        - A correlation of {stats['correlation']:.3f} means that as {col1} increases, {col2} tends to {'increase' if stats['correlation'] > 0 else 'decrease'}.
+        - The covariance of {stats['covariance']:.3f} indicates the direction and magnitude of the linear relationship.
+        """)
+        
+        # Additional insights
+        if abs(stats['correlation']) > 0.7:
+            st.success("💡 **Strong Correlation Detected:** This suggests a meaningful relationship between the variables.")
+        elif abs(stats['correlation']) > 0.3:
+            st.warning("⚠️ **Moderate Correlation:** There is some relationship, but it may not be strong enough for reliable predictions.")
+        else:
+            st.info("ℹ️ **Weak Correlation:** Little to no linear relationship detected between these variables.")
