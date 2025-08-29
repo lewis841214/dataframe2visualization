@@ -537,6 +537,54 @@ class InteractiveTableDisplay:
         """Create and display scatter plot with trend line."""
         st.subheader("🎨 Scatter Plot")
         
+        # Plot size controls
+        st.markdown("**📏 Plot Size Controls**")
+        
+        # Size presets
+        size_preset = st.selectbox(
+            "Quick Size Preset",
+            ["Custom", "Small (6x4)", "Medium (8x6)", "Large (12x8)", "Extra Large (16x10)", "Browser Friendly (8x5)"],
+            key="size_preset"
+        )
+        
+        # Apply preset sizes
+        if size_preset == "Small (6x4)":
+            plot_width, plot_height = 6, 4
+        elif size_preset == "Medium (8x6)":
+            plot_width, plot_height = 8, 6
+        elif size_preset == "Large (12x8)":
+            plot_width, plot_height = 12, 8
+        elif size_preset == "Extra Large (16x10)":
+            plot_width, plot_height = 16, 10
+        elif size_preset == "Browser Friendly (8x5)":
+            plot_width, plot_height = 8, 5
+        else:
+            # Custom size controls
+            col1_size, col2_size = st.columns(2)
+            
+            with col1_size:
+                plot_width = st.slider(
+                    "Plot Width (inches)", 
+                    min_value=4, 
+                    max_value=20, 
+                    value=10, 
+                    step=1,
+                    key="plot_width"
+                )
+            
+            with col2_size:
+                plot_height = st.slider(
+                    "Plot Height (inches)", 
+                    min_value=3, 
+                    max_value=15, 
+                    value=6, 
+                    step=1,
+                    key="plot_height"
+                )
+        
+        # Display current size
+        st.info(f"📐 Current plot size: {plot_width} × {plot_height} inches")
+        
         # Plot type selection
         plot_type = st.selectbox(
             "Select Plot Type",
@@ -548,24 +596,24 @@ class InteractiveTableDisplay:
         valid_data = df[[col1, col2]].dropna()
         
         if plot_type == "Enhanced Seaborn":
-            self._create_enhanced_seaborn_plot(valid_data, col1, col2, stats)
+            self._create_enhanced_seaborn_plot(valid_data, col1, col2, stats, plot_width, plot_height)
         elif plot_type == "Classic Matplotlib":
-            self._create_classic_matplotlib_plot(valid_data, col1, col2, stats)
+            self._create_classic_matplotlib_plot(valid_data, col1, col2, stats, plot_width, plot_height)
         elif plot_type == "Joint Plot":
-            self._create_joint_plot(valid_data, col1, col2, stats)
+            self._create_joint_plot(valid_data, col1, col2, stats, plot_width, plot_height)
         elif plot_type == "Regression Plot":
-            self._create_regression_plot(valid_data, col1, col2, stats)
+            self._create_regression_plot(valid_data, col1, col2, stats, plot_width, plot_height)
         
         # Add plot options
-        self._add_plot_options(df, col1, col2, stats)
+        self._add_plot_options(df, col1, col2, stats, plot_width, plot_height)
     
-    def _create_enhanced_seaborn_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float]) -> None:
+    def _create_enhanced_seaborn_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], width: int, height: int) -> None:
         """Create enhanced seaborn scatter plot with confidence intervals."""
         # Set seaborn style
         sns.set_theme(style="whitegrid", palette="husl")
         
-        # Create figure
-        fig, ax = plt.subplots(figsize=(12, 8))
+        # Create figure with adjustable size
+        fig, ax = plt.subplots(figsize=(width, height))
         
         # Create enhanced scatter plot with seaborn
         sns.regplot(
@@ -596,9 +644,9 @@ class InteractiveTableDisplay:
         st.pyplot(fig)
         plt.close(fig)
     
-    def _create_classic_matplotlib_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float]) -> None:
+    def _create_classic_matplotlib_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], width: int, height: int) -> None:
         """Create classic matplotlib scatter plot."""
-        fig, ax = plt.subplots(figsize=(10, 8))
+        fig, ax = plt.subplots(figsize=(width, height))
         
         # Create scatter plot
         scatter = ax.scatter(valid_data[col1], valid_data[col2], alpha=0.6, s=50, color='steelblue')
@@ -628,18 +676,18 @@ class InteractiveTableDisplay:
         st.pyplot(fig)
         plt.close(fig)
     
-    def _create_joint_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float]) -> None:
+    def _create_joint_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], width: int, height: int) -> None:
         """Create seaborn joint plot with histograms and KDE."""
         # Set seaborn style
         sns.set_theme(style="whitegrid", palette="husl")
         
-        # Create joint plot
+        # Create joint plot with adjustable size
         g = sns.jointplot(
             data=valid_data,
             x=col1,
             y=col2,
             kind="scatter",
-            height=8,
+            height=height,
             joint_kws={'alpha': 0.6, 's': 50},
             marginal_kws={'bins': 20, 'kde': True}
         )
@@ -669,13 +717,13 @@ class InteractiveTableDisplay:
         st.pyplot(g.fig)
         plt.close(g.fig)
     
-    def _create_regression_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float]) -> None:
+    def _create_regression_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], width: int, height: int) -> None:
         """Create seaborn regression plot with confidence intervals and residuals."""
         # Set seaborn style
         sns.set_theme(style="whitegrid", palette="husl")
         
-        # Create subplots for main plot and residuals
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), height_ratios=[3, 1])
+        # Create subplots for main plot and residuals with adjustable size
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(width, height), height_ratios=[3, 1])
         
         # Main regression plot
         sns.regplot(
@@ -717,7 +765,7 @@ class InteractiveTableDisplay:
         st.pyplot(fig)
         plt.close(fig)
     
-    def _add_plot_options(self, df: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float]) -> None:
+    def _add_plot_options(self, df: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], width: int, height: int) -> None:
         """Add plot options and export functionality."""
         st.markdown("**Plot Options:**")
         col1_opt, col2_opt = st.columns(2)
@@ -731,13 +779,13 @@ class InteractiveTableDisplay:
                 valid_data = df[[col1, col2]].dropna()
                 
                 if plot_type == "Enhanced Seaborn":
-                    fig = self._create_downloadable_seaborn_plot(valid_data, col1, col2, stats)
+                    fig = self._create_downloadable_seaborn_plot(valid_data, col1, col2, stats, width, height)
                 elif plot_type == "Joint Plot":
-                    fig = self._create_downloadable_joint_plot(valid_data, col1, col2, stats)
+                    fig = self._create_downloadable_joint_plot(valid_data, col1, col2, stats, width, height)
                 elif plot_type == "Regression Plot":
-                    fig = self._create_downloadable_regression_plot(valid_data, col1, col2, stats)
+                    fig = self._create_downloadable_regression_plot(valid_data, col1, col2, stats, width, height)
                 else:
-                    fig = self._create_downloadable_matplotlib_plot(valid_data, col1, col2, stats)
+                    fig = self._create_downloadable_matplotlib_plot(valid_data, col1, col2, stats, width, height)
                 
                 # Save to buffer
                 import io
@@ -765,10 +813,10 @@ class InteractiveTableDisplay:
                 mime="text/csv"
             )
     
-    def _create_downloadable_seaborn_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float]) -> plt.Figure:
+    def _create_downloadable_seaborn_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], width: int, height: int) -> plt.Figure:
         """Create downloadable seaborn plot."""
         sns.set_theme(style="whitegrid", palette="husl")
-        fig, ax = plt.subplots(figsize=(12, 8))
+        fig, ax = plt.subplots(figsize=(width, height))
         
         sns.regplot(
             data=valid_data, 
@@ -790,7 +838,7 @@ class InteractiveTableDisplay:
         
         return fig
     
-    def _create_downloadable_joint_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float]) -> plt.Figure:
+    def _create_downloadable_joint_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], width: int, height: int) -> plt.Figure:
         """Create downloadable joint plot."""
         sns.set_theme(style="whitegrid", palette="husl")
         g = sns.jointplot(
@@ -798,7 +846,7 @@ class InteractiveTableDisplay:
             x=col1,
             y=col2,
             kind="scatter",
-            height=8,
+            height=height,
             joint_kws={'alpha': 0.6, 's': 50},
             marginal_kws={'bins': 20, 'kde': True}
         )
@@ -819,10 +867,10 @@ class InteractiveTableDisplay:
         
         return g.fig
     
-    def _create_downloadable_regression_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float]) -> plt.Figure:
+    def _create_downloadable_regression_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], width: int, height: int) -> plt.Figure:
         """Create downloadable regression plot."""
         sns.set_theme(style="whitegrid", palette="husl")
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), height_ratios=[3, 1])
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(width, height), height_ratios=[3, 1])
         
         sns.regplot(
             data=valid_data, 
@@ -853,9 +901,9 @@ class InteractiveTableDisplay:
         
         return fig
     
-    def _create_downloadable_matplotlib_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float]) -> plt.Figure:
+    def _create_downloadable_matplotlib_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], width: int, height: int) -> plt.Figure:
         """Create downloadable matplotlib plot."""
-        fig, ax = plt.subplots(figsize=(10, 8))
+        fig, ax = plt.subplots(figsize=(width, height))
         
         ax.scatter(valid_data[col1], valid_data[col2], alpha=0.6, s=50, color='steelblue')
         
