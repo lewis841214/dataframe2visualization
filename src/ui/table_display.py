@@ -6,6 +6,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import seaborn as sns
 from typing import Any, Dict, List, Optional, Tuple
 from ..config.settings import AppConfig
 
@@ -536,10 +537,67 @@ class InteractiveTableDisplay:
         """Create and display scatter plot with trend line."""
         st.subheader("🎨 Scatter Plot")
         
+        # Plot type selection
+        plot_type = st.selectbox(
+            "Select Plot Type",
+            ["Enhanced Seaborn", "Classic Matplotlib", "Joint Plot", "Regression Plot"],
+            key="plot_type_selector"
+        )
+        
         # Get valid data
         valid_data = df[[col1, col2]].dropna()
         
-        # Create matplotlib figure
+        if plot_type == "Enhanced Seaborn":
+            self._create_enhanced_seaborn_plot(valid_data, col1, col2, stats)
+        elif plot_type == "Classic Matplotlib":
+            self._create_classic_matplotlib_plot(valid_data, col1, col2, stats)
+        elif plot_type == "Joint Plot":
+            self._create_joint_plot(valid_data, col1, col2, stats)
+        elif plot_type == "Regression Plot":
+            self._create_regression_plot(valid_data, col1, col2, stats)
+        
+        # Add plot options
+        self._add_plot_options(df, col1, col2, stats)
+    
+    def _create_enhanced_seaborn_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float]) -> None:
+        """Create enhanced seaborn scatter plot with confidence intervals."""
+        # Set seaborn style
+        sns.set_theme(style="whitegrid", palette="husl")
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=(12, 8))
+        
+        # Create enhanced scatter plot with seaborn
+        sns.regplot(
+            data=valid_data, 
+            x=col1, 
+            y=col2,
+            scatter_kws={'alpha': 0.6, 's': 60, 'color': 'steelblue'},
+            line_kws={'color': 'red', 'linewidth': 2, 'linestyle': '--'},
+            ax=ax,
+            ci=95  # 95% confidence interval
+        )
+        
+        # Customize plot
+        ax.set_xlabel(col1, fontsize=12, fontweight='bold')
+        ax.set_ylabel(col2, fontsize=12, fontweight='bold')
+        ax.set_title(f"Enhanced Scatter Plot: {col1} vs {col2}", fontsize=14, fontweight='bold')
+        
+        # Add statistics text box
+        stats_text = f"n = {stats['n_points']}\n"
+        stats_text += f"r = {stats['correlation']:.3f}\n"
+        stats_text += f"Cov = {stats['covariance']:.3f}\n"
+        stats_text += f"95% CI shown"
+        
+        ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, 
+               verticalalignment='top', bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.9))
+        
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
+    
+    def _create_classic_matplotlib_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float]) -> None:
+        """Create classic matplotlib scatter plot."""
         fig, ax = plt.subplots(figsize=(10, 8))
         
         # Create scatter plot
@@ -554,7 +612,7 @@ class InteractiveTableDisplay:
         # Customize plot
         ax.set_xlabel(col1, fontsize=12, fontweight='bold')
         ax.set_ylabel(col2, fontsize=12, fontweight='bold')
-        ax.set_title(f"Scatter Plot: {col1} vs {col2}", fontsize=14, fontweight='bold')
+        ax.set_title(f"Classic Scatter Plot: {col1} vs {col2}", fontsize=14, fontweight='bold')
         ax.grid(True, alpha=0.3)
         ax.legend()
         
@@ -567,31 +625,119 @@ class InteractiveTableDisplay:
                verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
         
         plt.tight_layout()
-        
-        # Display plot
         st.pyplot(fig)
         plt.close(fig)
+    
+    def _create_joint_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float]) -> None:
+        """Create seaborn joint plot with histograms and KDE."""
+        # Set seaborn style
+        sns.set_theme(style="whitegrid", palette="husl")
         
-        # Add plot options
+        # Create joint plot
+        g = sns.jointplot(
+            data=valid_data,
+            x=col1,
+            y=col2,
+            kind="scatter",
+            height=8,
+            joint_kws={'alpha': 0.6, 's': 50},
+            marginal_kws={'bins': 20, 'kde': True}
+        )
+        
+        # Add trend line
+        if len(valid_data) > 1:
+            sns.regplot(
+                data=valid_data, 
+                x=col1, 
+                y=col2,
+                scatter=False,
+                line_kws={'color': 'red', 'linewidth': 2, 'linestyle': '--'},
+                ax=g.ax_joint
+            )
+        
+        # Customize titles
+        g.fig.suptitle(f"Joint Plot: {col1} vs {col2}", y=1.02, fontsize=14, fontweight='bold')
+        g.ax_joint.set_xlabel(col1, fontsize=12, fontweight='bold')
+        g.ax_joint.set_ylabel(col2, fontsize=12, fontweight='bold')
+        
+        # Add statistics text
+        stats_text = f"n = {stats['n_points']}\nr = {stats['correlation']:.3f}"
+        g.ax_joint.text(0.02, 0.98, stats_text, transform=g.ax_joint.transAxes, 
+                        verticalalignment='top', bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.9))
+        
+        plt.tight_layout()
+        st.pyplot(g.fig)
+        plt.close(g.fig)
+    
+    def _create_regression_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float]) -> None:
+        """Create seaborn regression plot with confidence intervals and residuals."""
+        # Set seaborn style
+        sns.set_theme(style="whitegrid", palette="husl")
+        
+        # Create subplots for main plot and residuals
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), height_ratios=[3, 1])
+        
+        # Main regression plot
+        sns.regplot(
+            data=valid_data, 
+            x=col1, 
+            y=col2,
+            scatter_kws={'alpha': 0.6, 's': 60, 'color': 'steelblue'},
+            line_kws={'color': 'red', 'linewidth': 2},
+            ax=ax1,
+            ci=95
+        )
+        
+        ax1.set_xlabel(col1, fontsize=12, fontweight='bold')
+        ax1.set_ylabel(col2, fontsize=12, fontweight='bold')
+        ax1.set_title(f"Regression Plot: {col1} vs {col2}", fontsize=14, fontweight='bold')
+        
+        # Residuals plot
+        if len(valid_data) > 1:
+            # Calculate residuals
+            z = np.polyfit(valid_data[col1], valid_data[col2], 1)
+            p = np.poly1d(z)
+            predicted = p(valid_data[col1])
+            residuals = valid_data[col2] - predicted
+            
+            # Plot residuals
+            ax2.scatter(valid_data[col1], residuals, alpha=0.6, s=50, color='orange')
+            ax2.axhline(y=0, color='red', linestyle='--', alpha=0.8)
+            ax2.set_xlabel(col1, fontsize=12, fontweight='bold')
+            ax2.set_ylabel('Residuals', fontsize=12, fontweight='bold')
+            ax2.set_title('Residual Plot', fontsize=12, fontweight='bold')
+            ax2.grid(True, alpha=0.3)
+        
+        # Add statistics text
+        stats_text = f"n = {stats['n_points']}\nr = {stats['correlation']:.3f}\nR² = {stats['correlation']**2:.3f}"
+        ax1.text(0.02, 0.98, stats_text, transform=ax1.transAxes, 
+                verticalalignment='top', bbox=dict(boxstyle='round', facecolor='lightcoral', alpha=0.9))
+        
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
+    
+    def _add_plot_options(self, df: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float]) -> None:
+        """Add plot options and export functionality."""
         st.markdown("**Plot Options:**")
-        col1, col2 = st.columns(2)
+        col1_opt, col2_opt = st.columns(2)
         
-        with col1:
-            if st.button("📥 Download Plot as PNG"):
-                # Create plot again for download
-                fig, ax = plt.subplots(figsize=(10, 8))
-                ax.scatter(valid_data[col1], valid_data[col2], alpha=0.6, s=50, color='steelblue')
+        with col1_opt:
+            if st.button("📥 Download Current Plot as PNG"):
+                # Get the current plot type
+                plot_type = st.session_state.get("plot_type_selector", "Enhanced Seaborn")
                 
-                if len(valid_data) > 1:
-                    z = np.polyfit(valid_data[col1], valid_data[col2], 1)
-                    p = np.poly1d(z)
-                    ax.plot(valid_data[col1], p(valid_data[col1]), "r--", alpha=0.8, linewidth=2, label='Trend Line')
+                # Create appropriate plot for download
+                valid_data = df[[col1, col2]].dropna()
                 
-                ax.set_xlabel(col1, fontsize=12, fontweight='bold')
-                ax.set_ylabel(col2, fontsize=12, fontweight='bold')
-                ax.set_title(f"Scatter Plot: {col1} vs {col2}", fontsize=14, fontweight='bold')
-                ax.grid(True, alpha=0.3)
-                ax.legend()
+                if plot_type == "Enhanced Seaborn":
+                    fig = self._create_downloadable_seaborn_plot(valid_data, col1, col2, stats)
+                elif plot_type == "Joint Plot":
+                    fig = self._create_downloadable_joint_plot(valid_data, col1, col2, stats)
+                elif plot_type == "Regression Plot":
+                    fig = self._create_downloadable_regression_plot(valid_data, col1, col2, stats)
+                else:
+                    fig = self._create_downloadable_matplotlib_plot(valid_data, col1, col2, stats)
                 
                 # Save to buffer
                 import io
@@ -603,12 +749,12 @@ class InteractiveTableDisplay:
                 st.download_button(
                     label="Click to download",
                     data=buf.getvalue(),
-                    file_name=f"scatter_plot_{col1}_vs_{col2}.png",
+                    file_name=f"scatter_plot_{col1}_vs_{col2}_{plot_type.lower().replace(' ', '_')}.png",
                     mime="image/png"
                 )
                 plt.close(fig)
         
-        with col2:
+        with col2_opt:
             # Export statistics to CSV
             stats_df = pd.DataFrame([stats])
             csv = stats_df.to_csv(index=False)
@@ -618,6 +764,117 @@ class InteractiveTableDisplay:
                 file_name=f"statistics_{col1}_vs_{col2}.csv",
                 mime="text/csv"
             )
+    
+    def _create_downloadable_seaborn_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float]) -> plt.Figure:
+        """Create downloadable seaborn plot."""
+        sns.set_theme(style="whitegrid", palette="husl")
+        fig, ax = plt.subplots(figsize=(12, 8))
+        
+        sns.regplot(
+            data=valid_data, 
+            x=col1, 
+            y=col2,
+            scatter_kws={'alpha': 0.6, 's': 60, 'color': 'steelblue'},
+            line_kws={'color': 'red', 'linewidth': 2, 'linestyle': '--'},
+            ax=ax,
+            ci=95
+        )
+        
+        ax.set_xlabel(col1, fontsize=12, fontweight='bold')
+        ax.set_ylabel(col2, fontsize=12, fontweight='bold')
+        ax.set_title(f"Enhanced Scatter Plot: {col1} vs {col2}", fontsize=14, fontweight='bold')
+        
+        stats_text = f"n = {stats['n_points']}\nr = {stats['correlation']:.3f}\nCov = {stats['covariance']:.3f}"
+        ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, 
+               verticalalignment='top', bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.9))
+        
+        return fig
+    
+    def _create_downloadable_joint_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float]) -> plt.Figure:
+        """Create downloadable joint plot."""
+        sns.set_theme(style="whitegrid", palette="husl")
+        g = sns.jointplot(
+            data=valid_data,
+            x=col1,
+            y=col2,
+            kind="scatter",
+            height=8,
+            joint_kws={'alpha': 0.6, 's': 50},
+            marginal_kws={'bins': 20, 'kde': True}
+        )
+        
+        if len(valid_data) > 1:
+            sns.regplot(
+                data=valid_data, 
+                x=col1, 
+                y=col2,
+                scatter=False,
+                line_kws={'color': 'red', 'linewidth': 2, 'linestyle': '--'},
+                ax=g.ax_joint
+            )
+        
+        g.fig.suptitle(f"Joint Plot: {col1} vs {col2}", y=1.02, fontsize=14, fontweight='bold')
+        g.ax_joint.set_xlabel(col1, fontsize=12, fontweight='bold')
+        g.ax_joint.set_ylabel(col2, fontsize=12, fontweight='bold')
+        
+        return g.fig
+    
+    def _create_downloadable_regression_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float]) -> plt.Figure:
+        """Create downloadable regression plot."""
+        sns.set_theme(style="whitegrid", palette="husl")
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), height_ratios=[3, 1])
+        
+        sns.regplot(
+            data=valid_data, 
+            x=col1, 
+            y=col2,
+            scatter_kws={'alpha': 0.6, 's': 60, 'color': 'steelblue'},
+            line_kws={'color': 'red', 'linewidth': 2},
+            ax=ax1,
+            ci=95
+        )
+        
+        ax1.set_xlabel(col1, fontsize=12, fontweight='bold')
+        ax1.set_ylabel(col2, fontsize=12, fontweight='bold')
+        ax1.set_title(f"Regression Plot: {col1} vs {col2}", fontsize=14, fontweight='bold')
+        
+        if len(valid_data) > 1:
+            z = np.polyfit(valid_data[col1], valid_data[col2], 1)
+            p = np.poly1d(z)
+            predicted = p(valid_data[col1])
+            residuals = valid_data[col2] - predicted
+            
+            ax2.scatter(valid_data[col1], residuals, alpha=0.6, s=50, color='orange')
+            ax2.axhline(y=0, color='red', linestyle='--', alpha=0.8)
+            ax2.set_xlabel(col1, fontsize=12, fontweight='bold')
+            ax2.set_ylabel('Residuals', fontsize=12, fontweight='bold')
+            ax2.set_title('Residual Plot', fontsize=12, fontweight='bold')
+            ax2.grid(True, alpha=0.3)
+        
+        return fig
+    
+    def _create_downloadable_matplotlib_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float]) -> plt.Figure:
+        """Create downloadable matplotlib plot."""
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        ax.scatter(valid_data[col1], valid_data[col2], alpha=0.6, s=50, color='steelblue')
+        
+        if len(valid_data) > 1:
+            z = np.polyfit(valid_data[col1], valid_data[col2], 1)
+            p = np.poly1d(z)
+            ax.plot(valid_data[col1], p(valid_data[col1]), "r--", alpha=0.8, linewidth=2, label='Trend Line')
+        
+        ax.set_xlabel(col1, fontsize=12, fontweight='bold')
+        ax.set_ylabel(col2, fontsize=12, fontweight='bold')
+        ax.set_title(f"Classic Scatter Plot: {col1} vs {col2}", fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+        
+        stats_text = f"n = {stats['n_points']}\nr = {stats['correlation']:.3f}\nCov = {stats['covariance']:.3f}"
+        ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, 
+               verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+        
+        return fig
     
     def _display_correlation_interpretation(self, stats: Dict[str, float], col1: str, col2: str) -> None:
         """Display correlation interpretation and insights."""
