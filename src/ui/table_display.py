@@ -588,9 +588,37 @@ class InteractiveTableDisplay:
         # Plot type selection
         plot_type = st.selectbox(
             "Select Plot Type",
-            ["Enhanced Seaborn", "Classic Matplotlib", "Joint Plot", "Regression Plot"],
+            ["Enhanced Seaborn", "Classic Matplotlib", "Joint Plot", "Regression Plot", "Heat Map Scatter"],
             key="plot_type_selector"
         )
+        
+        # Heat column selection (only for Heat Map Scatter)
+        heat_column = None
+        flow_name_column = None
+        if plot_type == "Heat Map Scatter":
+            col_heat, col_flow = st.columns(2)
+            
+            with col_heat:
+                # Get all numeric columns for heat mapping
+                all_numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+                heat_column = st.selectbox(
+                    "Select Heat Column (for coloring)",
+                    ["None"] + all_numeric_cols,
+                    key="heat_column_selector"
+                )
+                if heat_column == "None":
+                    heat_column = None
+            
+            with col_flow:
+                # Get all columns for flow name display
+                all_cols = df.columns.tolist()
+                flow_name_column = st.selectbox(
+                    "Select Flow Name Column",
+                    ["None"] + all_cols,
+                    key="flow_name_selector"
+                )
+                if flow_name_column == "None":
+                    flow_name_column = None
         
         # Get valid data
         valid_data = df[[col1, col2]].dropna()
@@ -603,6 +631,8 @@ class InteractiveTableDisplay:
             self._create_joint_plot(valid_data, col1, col2, stats, plot_width, plot_height)
         elif plot_type == "Regression Plot":
             self._create_regression_plot(valid_data, col1, col2, stats, plot_width, plot_height)
+        elif plot_type == "Heat Map Scatter":
+            self._create_heat_map_scatter_plot(df, col1, col2, stats, plot_width, plot_height, heat_column, flow_name_column)
         
         # Add plot options
         self._add_plot_options(df, col1, col2, stats, plot_width, plot_height)
@@ -765,6 +795,113 @@ class InteractiveTableDisplay:
         st.pyplot(fig)
         plt.close(fig)
     
+    def _create_heat_map_scatter_plot(self, df: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], 
+                                    width: int, height: int, heat_column: str = None, flow_name_column: str = None) -> None:
+        """Create heat map scatter plot with colored dots and flow names."""
+        # Set seaborn style
+        sns.set_theme(style="whitegrid", palette="husl")
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=(width, height))
+        
+        # Get valid data
+        columns_needed = [col1, col2]
+        if heat_column:
+            columns_needed.append(heat_column)
+        if flow_name_column:
+            columns_needed.append(flow_name_column)
+        
+        valid_data = df[columns_needed].dropna()
+        
+        if len(valid_data) == 0:
+            st.error("❌ No valid data points found for the selected columns.")
+            return
+        
+        # Create scatter plot
+        if heat_column and heat_column in valid_data.columns:
+            # Color by heat column
+            scatter = ax.scatter(
+                valid_data[col1], 
+                valid_data[col2], 
+                c=valid_data[heat_column], 
+                cmap='viridis', 
+                alpha=0.7, 
+                s=80,
+                edgecolors='black',
+                linewidth=0.5
+            )
+            
+            # Add colorbar
+            cbar = plt.colorbar(scatter, ax=ax)
+            cbar.set_label(f'{heat_column} (Heat Value)', fontsize=10, fontweight='bold')
+        else:
+            # Default color
+            scatter = ax.scatter(
+                valid_data[col1], 
+                valid_data[col2], 
+                alpha=0.7, 
+                s=80,
+                color='steelblue',
+                edgecolors='black',
+                linewidth=0.5
+            )
+        
+        # Add flow names under dots if specified
+        if flow_name_column and flow_name_column in valid_data.columns:
+            for idx, row in valid_data.iterrows():
+                x_pos = row[col1]
+                y_pos = row[col2]
+                flow_name = str(row[flow_name_column])
+                
+                # Add text below the point
+                ax.text(
+                    x_pos, 
+                    y_pos - (valid_data[col2].max() - valid_data[col2].min()) * 0.02, 
+                    flow_name, 
+                    fontsize=8, 
+                    ha='center', 
+                    va='top',
+                    rotation=45,
+                    alpha=0.8
+                )
+        
+        # Add trend line
+        if len(valid_data) > 1:
+            z = np.polyfit(valid_data[col1], valid_data[col2], 1)
+            p = np.poly1d(z)
+            ax.plot(valid_data[col1], p(valid_data[col1]), "r--", alpha=0.8, linewidth=2, label='Trend Line')
+            ax.legend()
+        
+        # Customize plot
+        ax.set_xlabel(col1, fontsize=12, fontweight='bold')
+        ax.set_ylabel(col2, fontsize=12, fontweight='bold')
+        
+        title = f"Heat Map Scatter: {col1} vs {col2}"
+        if heat_column:
+            title += f" (colored by {heat_column})"
+        if flow_name_column:
+            title += f" (labels: {flow_name_column})"
+        
+        ax.set_title(title, fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        
+        # Add statistics text box
+        stats_text = f"n = {len(valid_data)}\n"
+        stats_text += f"r = {stats['correlation']:.3f}\n"
+        stats_text += f"Cov = {stats['covariance']:.3f}"
+        
+        if heat_column:
+            stats_text += f"\nHeat: {heat_column}"
+        if flow_name_column:
+            stats_text += f"\nLabels: {flow_name_column}"
+        
+        ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, 
+               verticalalignment='top', bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.9))
+        
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
+    
     def _add_plot_options(self, df: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], width: int, height: int) -> None:
         """Add plot options and export functionality."""
         st.markdown("**Plot Options:**")
@@ -784,6 +921,12 @@ class InteractiveTableDisplay:
                     fig = self._create_downloadable_joint_plot(valid_data, col1, col2, stats, width, height)
                 elif plot_type == "Regression Plot":
                     fig = self._create_downloadable_regression_plot(valid_data, col1, col2, stats, width, height)
+                elif plot_type == "Heat Map Scatter":
+                    heat_col = st.session_state.get("heat_column_selector", "None")
+                    flow_col = st.session_state.get("flow_name_selector", "None")
+                    heat_col = None if heat_col == "None" else heat_col
+                    flow_col = None if flow_col == "None" else flow_col
+                    fig = self._create_downloadable_heat_map_scatter_plot(df, col1, col2, stats, width, height, heat_col, flow_col)
                 else:
                     fig = self._create_downloadable_matplotlib_plot(valid_data, col1, col2, stats, width, height)
                 
@@ -921,6 +1064,110 @@ class InteractiveTableDisplay:
         stats_text = f"n = {stats['n_points']}\nr = {stats['correlation']:.3f}\nCov = {stats['covariance']:.3f}"
         ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, 
                verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+        
+        return fig
+    
+    def _create_downloadable_heat_map_scatter_plot(self, df: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], 
+                                                 width: int, height: int, heat_column: str = None, flow_name_column: str = None) -> plt.Figure:
+        """Create downloadable heat map scatter plot."""
+        # Set seaborn style
+        sns.set_theme(style="whitegrid", palette="husl")
+        
+        # Create figure
+        fig, ax = plt.subplots(figsize=(width, height))
+        
+        # Get valid data
+        columns_needed = [col1, col2]
+        if heat_column:
+            columns_needed.append(heat_column)
+        if flow_name_column:
+            columns_needed.append(flow_name_column)
+        
+        valid_data = df[columns_needed].dropna()
+        
+        if len(valid_data) == 0:
+            return fig
+        
+        # Create scatter plot
+        if heat_column and heat_column in valid_data.columns:
+            # Color by heat column
+            scatter = ax.scatter(
+                valid_data[col1], 
+                valid_data[col2], 
+                c=valid_data[heat_column], 
+                cmap='viridis', 
+                alpha=0.7, 
+                s=80,
+                edgecolors='black',
+                linewidth=0.5
+            )
+            
+            # Add colorbar
+            cbar = plt.colorbar(scatter, ax=ax)
+            cbar.set_label(f'{heat_column} (Heat Value)', fontsize=10, fontweight='bold')
+        else:
+            # Default color
+            scatter = ax.scatter(
+                valid_data[col1], 
+                valid_data[col2], 
+                alpha=0.7, 
+                s=80,
+                color='steelblue',
+                edgecolors='black',
+                linewidth=0.5
+            )
+        
+        # Add flow names under dots if specified
+        if flow_name_column and flow_name_column in valid_data.columns:
+            for idx, row in valid_data.iterrows():
+                x_pos = row[col1]
+                y_pos = row[col2]
+                flow_name = str(row[flow_name_column])
+                
+                # Add text below the point
+                ax.text(
+                    x_pos, 
+                    y_pos - (valid_data[col2].max() - valid_data[col2].min()) * 0.02, 
+                    flow_name, 
+                    fontsize=8, 
+                    ha='center', 
+                    va='top',
+                    rotation=45,
+                    alpha=0.8
+                )
+        
+        # Add trend line
+        if len(valid_data) > 1:
+            z = np.polyfit(valid_data[col1], valid_data[col2], 1)
+            p = np.poly1d(z)
+            ax.plot(valid_data[col1], p(valid_data[col1]), "r--", alpha=0.8, linewidth=2, label='Trend Line')
+            ax.legend()
+        
+        # Customize plot
+        ax.set_xlabel(col1, fontsize=12, fontweight='bold')
+        ax.set_ylabel(col2, fontsize=12, fontweight='bold')
+        
+        title = f"Heat Map Scatter: {col1} vs {col2}"
+        if heat_column:
+            title += f" (colored by {heat_column})"
+        if flow_name_column:
+            title += f" (labels: {flow_name_column})"
+        
+        ax.set_title(title, fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        
+        # Add statistics text box
+        stats_text = f"n = {len(valid_data)}\n"
+        stats_text += f"r = {stats['correlation']:.3f}\n"
+        stats_text += f"Cov = {stats['covariance']:.3f}"
+        
+        if heat_column:
+            stats_text += f"\nHeat: {heat_column}"
+        if flow_name_column:
+            stats_text += f"\nLabels: {flow_name_column}"
+        
+        ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, 
+               verticalalignment='top', bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.9))
         
         return fig
     
