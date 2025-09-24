@@ -863,13 +863,13 @@ class InteractiveTableDisplay:
                 # Add text below the point
                 ax.text(
                     x_pos, 
-                    y_pos - (valid_data[col2].max() - valid_data[col2].min()) * 0.02, 
+                    y_pos - (valid_data[col2].max() - valid_data[col2].min()) * 0.05, 
                     flow_name, 
-                    fontsize=8, 
+                    fontsize=3, 
                     ha='center', 
                     va='top',
-                    rotation=45,
-                    alpha=0.8
+                    rotation=0,
+                    alpha=0.7
                 )
         
         # Add trend line
@@ -1134,13 +1134,13 @@ class InteractiveTableDisplay:
                 # Add text below the point
                 ax.text(
                     x_pos, 
-                    y_pos - (valid_data[col2].max() - valid_data[col2].min()) * 0.02, 
+                    y_pos - (valid_data[col2].max() - valid_data[col2].min()) * 0.05, 
                     flow_name, 
-                    fontsize=8, 
+                    fontsize=3, 
                     ha='center', 
                     va='top',
-                    rotation=45,
-                    alpha=0.8
+                    rotation=0,
+                    alpha=0.7
                 )
         
         # Add trend line
