@@ -24,6 +24,10 @@ def create_sample_dataframe(data_type: str) -> pd.DataFrame:
         return _create_mixed_data_dataframe()
     elif data_type == "Large Dataset":
         return _create_large_dataset_dataframe()
+    elif data_type == "Performance Test (5000 points)":
+        return _create_performance_test_dataframe(5000)
+    elif data_type == "Performance Test (10000 points)":
+        return _create_performance_test_dataframe(10000)
     else:
         raise ValueError(f"Unknown data type: {data_type}")
 
@@ -100,6 +104,59 @@ def _create_large_dataset_dataframe() -> pd.DataFrame:
             'count': np.random.randint(1, 100),
             'image_data': img_array,
             'timestamp': pd.Timestamp.now() - pd.Timedelta(days=np.random.randint(0, 365))
+        }
+        data.append(row)
+    
+    return pd.DataFrame(data)
+
+def _create_performance_test_dataframe(num_points: int) -> pd.DataFrame:
+    """Create a large dataset for performance testing scatter plots."""
+    data = []
+    
+    # Set random seed for reproducible data
+    np.random.seed(42)
+    
+    # Generate correlated data for meaningful scatter plots
+    # Create base variables with correlation
+    x_base = np.random.normal(0, 1, num_points)
+    y_base = 0.7 * x_base + 0.3 * np.random.normal(0, 1, num_points)  # Correlated with x
+    z_base = 0.5 * x_base + 0.5 * np.random.normal(0, 1, num_points)  # Another correlated variable
+    
+    # Create categories
+    categories = ['Type_A', 'Type_B', 'Type_C', 'Type_D', 'Type_E']
+    
+    # Create flow names for heat map scatter
+    flow_names = [f'Flow_{i:04d}' for i in range(num_points)]
+    
+    for i in range(num_points):
+        # Create small thumbnail images (very lightweight for performance)
+        img_array = _create_simple_image(8, 8, i)
+        
+        row = {
+            'id': i + 1,
+            'name': f'DataPoint_{i+1:05d}',
+            'category': categories[i % len(categories)],
+            'flow_name': flow_names[i],
+            
+            # Numeric variables for scatter plotting
+            'value_x': round(x_base[i] * 100 + 500, 2),  # Scale to 0-1000 range
+            'value_y': round(y_base[i] * 100 + 500, 2),  # Correlated with value_x
+            'value_z': round(z_base[i] * 100 + 500, 2),  # Another correlated variable
+            'temperature': round(np.random.uniform(20, 80), 1),  # For heat mapping
+            'pressure': round(np.random.uniform(1, 10), 2),  # Another numeric variable
+            'velocity': round(np.random.uniform(0, 100), 1),  # Another numeric variable
+            
+            # Additional metadata
+            'timestamp': pd.Timestamp.now() - pd.Timedelta(days=np.random.randint(0, 365)),
+            'active': np.random.choice([True, False]),
+            'score': round(np.random.uniform(0, 100), 2),
+            'count': np.random.randint(1, 1000),
+            
+            # Lightweight image data
+            'image_data': img_array,
+            
+            # Some text data
+            'description': f'Performance test data point {i+1} with various numeric and categorical attributes for comprehensive scatter plot testing.'
         }
         data.append(row)
     

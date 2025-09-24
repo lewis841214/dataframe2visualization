@@ -111,6 +111,52 @@ def main():
             # Render table with controlled data
             table_display.render_table(final_df, result['column_metadata'], result['processed_data'])
             
+            # Data Analysis Section (separate from table)
+            st.header("📊 Data Analysis")
+            
+            # Data scope selection
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                analysis_scope = st.selectbox(
+                    "Analysis Scope",
+                    ["Current Page", "Full Dataset", "Sampled (5000 points)"],
+                    key="analysis_scope",
+                    help="Choose which data to use for scatter plot analysis"
+                )
+            
+            with col2:
+                if analysis_scope == "Sampled (5000 points)":
+                    max_sample_size = min(10000, len(df))
+                    sample_size = st.slider(
+                        "Sample Size", 
+                        1000, 
+                        max_sample_size, 
+                        5000,
+                        key="sample_size",
+                        help=f"Number of data points to sample (max: {max_sample_size})"
+                    )
+                else:
+                    sample_size = None
+            
+            # Get appropriate data for analysis
+            if analysis_scope == "Current Page":
+                analysis_df = final_df
+                st.info(f"📄 Analyzing current page data: {len(analysis_df)} points")
+            elif analysis_scope == "Full Dataset":
+                analysis_df = df
+                st.info(f"📊 Analyzing full dataset: {len(analysis_df)} points")
+            else:  # Sampled
+                if len(df) <= sample_size:
+                    analysis_df = df
+                    st.info(f"📊 Dataset size ({len(df)}) is smaller than sample size ({sample_size}). Using full dataset.")
+                else:
+                    analysis_df = df.sample(n=sample_size, random_state=42)
+                    st.info(f"🎯 Analyzing sampled data: {len(analysis_df)} points (randomly sampled from {len(df)} total)")
+            
+            # Render scatter plot analysis with selected data
+            table_display.render_scatter_plot_analysis(analysis_df)
+            
             # Handle image clicks
             st.markdown("---")
             st.markdown("### Image Viewer")

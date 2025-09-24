@@ -185,7 +185,9 @@ def create_sample_data_selector() -> Optional[str]:
         "None",
         "Random Images",
         "Mixed Data Types",
-        "Large Dataset"
+        "Large Dataset",
+        "Performance Test (5000 points)",
+        "Performance Test (10000 points)"
     ]
     
     selected = st.selectbox(

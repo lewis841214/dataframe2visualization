@@ -38,9 +38,6 @@ class InteractiveTableDisplay:
         
         # Handle image clicks
         self._handle_image_interactions()
-        
-        # Add scatter plot analysis
-        self.render_scatter_plot_analysis(df)
     
     def _render_table_info(self, df: pd.DataFrame, column_metadata: Dict[str, Any]) -> None:
         """
@@ -389,6 +386,15 @@ class InteractiveTableDisplay:
         st.markdown("---")
         st.markdown("### 📊 Scatter Plot Analysis")
         
+        # Check data size and provide memory warnings
+        data_size = len(df)
+        if data_size > 10000:
+            st.warning("⚠️ **Large Dataset Warning**: Analyzing {:,} data points. This may take longer and use more memory. Consider using sampling for better performance.".format(data_size))
+        elif data_size > 5000:
+            st.info("ℹ️ **Performance Notice**: Analyzing {:,} data points. Plot generation may take a moment.".format(data_size))
+        else:
+            st.success("✅ Analyzing {:,} data points - optimal performance expected.".format(data_size))
+        
         # Get numeric columns
         numeric_cols = self._get_numeric_columns(df)
         
@@ -434,8 +440,9 @@ class InteractiveTableDisplay:
         # Display detailed statistics
         self._display_detailed_statistics(stats, selected_col1, selected_col2)
         
-        # Create and display scatter plot
-        self._create_scatter_plot(df, selected_col1, selected_col2, stats)
+        # Create and display scatter plot with performance indicator
+        with st.spinner(f"Generating scatter plot for {len(df)} data points..."):
+            self._create_scatter_plot(df, selected_col1, selected_col2, stats)
         
         # Display interpretation
         self._display_correlation_interpretation(stats, selected_col1, selected_col2)
