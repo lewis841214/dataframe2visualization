@@ -49,7 +49,7 @@ class TableControls:
         self._render_display_settings()
         
         # Export controls
-        self._render_export_controls(df)
+        self._render_export_controls(final_df)
         
         return {
             'filtered_data': filtered_df,
