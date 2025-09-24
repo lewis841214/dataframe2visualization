@@ -1210,3 +1210,4 @@ class InteractiveTableDisplay:
             st.warning("⚠️ **Moderate Correlation:** There is some relationship, but it may not be strong enough for reliable predictions.")
         else:
             st.info("ℹ️ **Weak Correlation:** Little to no linear relationship detected between these variables.")
+    

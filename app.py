@@ -108,7 +108,7 @@ def main():
             # Get the final DataFrame with controls applied
             final_df = controls_result['final_data']
             
-            # Render table with controlled data
+            # Render table with controlled data (now includes Pareto filtering)
             table_display.render_table(final_df, result['column_metadata'], result['processed_data'])
             
             # Data Analysis Section (separate from table)

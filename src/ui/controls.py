@@ -4,6 +4,7 @@ Table controls module for Dataframe2Visualization.
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 from typing import Any, Dict, List, Optional, Tuple
 from ..config.settings import AppConfig
 
@@ -35,11 +36,14 @@ class TableControls:
         # Search and filter controls
         filtered_df = self._render_search_and_filters(df, column_metadata)
         
-        # Sorting controls (apply to filtered data first)
-        sorted_df = self._render_sorting_controls(filtered_df)
+        # Pareto frontier filter controls (apply to filtered data)
+        pareto_filtered_df = self._render_pareto_frontier_controls(filtered_df)
         
-        # Pagination controls (apply to sorted data)
-        paginated_df = self._render_pagination(sorted_df)
+        # Sorting controls (apply to Pareto filtered data)
+        sorted_df = self._render_sorting_controls(pareto_filtered_df)
+        
+        # No pagination - show all data
+        final_df = sorted_df
         
         # Display settings
         self._render_display_settings()
@@ -49,8 +53,9 @@ class TableControls:
         
         return {
             'filtered_data': filtered_df,
+            'pareto_filtered_data': pareto_filtered_df,
             'sorted_data': sorted_df,
-            'final_data': paginated_df,
+            'final_data': final_df,
             'controls_state': self._get_controls_state()
         }
     
@@ -571,3 +576,202 @@ class TableControls:
             filtered_df = self._apply_column_filters(filtered_df)
         
         return len(filtered_df)
+    
+    def _render_pareto_frontier_controls(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Render Pareto frontier filter controls.
+        
+        Args:
+            df: DataFrame to filter
+            
+        Returns:
+            DataFrame with Pareto filtering applied (if enabled)
+        """
+        # Check if Pareto filtering is enabled
+        pareto_enabled = st.checkbox(
+            "🎯 Enable Pareto Frontier Filter",
+            key="pareto_enabled",
+            help="Filter data to show only Pareto-optimal solutions"
+        )
+        
+        if not pareto_enabled:
+            return df
+        
+        # Get numeric columns for Pareto analysis
+        numeric_cols = [col for col in df.columns if pd.api.types.is_numeric_dtype(df[col])]
+        
+        if len(numeric_cols) < 2:
+            st.warning("⚠️ **Insufficient Data:** Need at least 2 numeric columns for Pareto frontier analysis.")
+            return df
+        
+        # Pareto filter controls
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("**Objective 1:**")
+            pareto_col1 = st.selectbox(
+                "Column 1",
+                numeric_cols,
+                key="pareto_col1",
+                help="First objective column"
+            )
+            pareto_obj1_type = st.selectbox(
+                "Optimization",
+                ["Maximize", "Minimize"],
+                key="pareto_obj1_type",
+                help="Whether to maximize or minimize this objective"
+            )
+        
+        with col2:
+            st.markdown("**Objective 2:**")
+            pareto_col2 = st.selectbox(
+                "Column 2",
+                [col for col in numeric_cols if col != pareto_col1],
+                key="pareto_col2",
+                help="Second objective column"
+            )
+            pareto_obj2_type = st.selectbox(
+                "Optimization",
+                ["Maximize", "Minimize"],
+                key="pareto_obj2_type",
+                help="Whether to maximize or minimize this objective"
+            )
+        
+        with col3:
+            st.markdown("**Budget:**")
+            budget = st.number_input(
+                "Max Solutions",
+                min_value=1,
+                max_value=len(df),
+                value=min(100, len(df)),
+                key="pareto_budget",
+                help="Maximum number of Pareto-optimal solutions to return"
+            )
+        
+        # Apply Pareto filtering
+        try:
+            filtered_df = self._calculate_pareto_frontier(
+                df, pareto_col1, pareto_col2, 
+                pareto_obj1_type, pareto_obj2_type, budget
+            )
+            
+            # Show results with tier information
+            if len(filtered_df) == budget:
+                st.success(f"✅ **Pareto Filter Applied:** {len(filtered_df)} solutions selected from {len(df)} total solutions (budget met).")
+            else:
+                st.success(f"✅ **Pareto Filter Applied:** {len(filtered_df)} solutions selected from {len(df)} total solutions (all available Pareto solutions).")
+            
+            return filtered_df
+            
+        except Exception as e:
+            st.error(f"❌ **Error applying Pareto filter:** {str(e)}")
+            return df
+    
+    def _calculate_pareto_frontier(self, df: pd.DataFrame, col1: str, col2: str, 
+                                 obj1_type: str, obj2_type: str, budget: int) -> pd.DataFrame:
+        """
+        Calculate Pareto frontier based on two objectives.
+        
+        Args:
+            df: DataFrame to analyze
+            col1: First objective column
+            col2: Second objective column
+            obj1_type: "Maximize" or "Minimize" for first objective
+            obj2_type: "Maximize" or "Minimize" for second objective
+            budget: Maximum number of solutions to return
+            
+        Returns:
+            DataFrame containing Pareto-optimal solutions
+        """
+        # Remove rows with NaN values in objective columns
+        valid_data = df.dropna(subset=[col1, col2]).copy()
+        
+        if len(valid_data) == 0:
+            st.error("❌ **No Valid Data:** All rows contain NaN values in the selected objective columns.")
+            return df.head(0)
+        
+        # Normalize objectives (convert minimize to maximize by negating)
+        obj1_values = valid_data[col1].values
+        obj2_values = valid_data[col2].values
+        
+        if obj1_type == "Minimize":
+            obj1_values = -obj1_values
+        if obj2_type == "Minimize":
+            obj2_values = -obj2_values
+        
+        # Calculate Pareto frontier using non-dominated sorting
+        pareto_indices = self._non_dominated_sorting(obj1_values, obj2_values, budget)
+        
+        # Return filtered DataFrame
+        return valid_data.iloc[pareto_indices].reset_index(drop=True)
+    
+    def _non_dominated_sorting(self, obj1_values: np.ndarray, obj2_values: np.ndarray, 
+                              budget: int) -> List[int]:
+        """
+        Perform multi-tier non-dominated sorting to find Pareto-optimal solutions.
+        
+        This implements a multi-tier approach:
+        - Tier 1: Non-dominated solutions (Pareto frontier)
+        - Tier 2: Solutions dominated only by Tier 1
+        - Tier 3: Solutions dominated by Tier 1 and Tier 2
+        - Continue until budget is met
+        
+        Args:
+            obj1_values: First objective values (normalized for maximization)
+            obj2_values: Second objective values (normalized for maximization)
+            budget: Maximum number of solutions to return
+            
+        Returns:
+            List of indices of solutions from multiple Pareto tiers
+        """
+        n = len(obj1_values)
+        all_indices = list(range(n))
+        selected_indices = []
+        remaining_indices = all_indices.copy()
+        tier = 1
+        
+        while len(selected_indices) < budget and remaining_indices:
+            # Find non-dominated solutions in remaining indices
+            tier_indices = []
+            
+            for i in remaining_indices:
+                is_dominated = False
+                
+                for j in remaining_indices:
+                    if i == j:
+                        continue
+                    
+                    # Check if solution j dominates solution i
+                    if (obj1_values[j] >= obj1_values[i] and obj2_values[j] >= obj2_values[i] and
+                        (obj1_values[j] > obj1_values[i] or obj2_values[j] > obj2_values[i])):
+                        is_dominated = True
+                        break
+                
+                if not is_dominated:
+                    tier_indices.append(i)
+            
+            if not tier_indices:
+                # No more non-dominated solutions, break
+                break
+            
+            # Sort tier solutions by combined objective value
+            tier_values = []
+            for idx in tier_indices:
+                combined_value = obj1_values[idx] + obj2_values[idx]
+                tier_values.append((combined_value, idx))
+            
+            tier_values.sort(reverse=True)
+            
+            # Add tier solutions to selected indices (up to budget)
+            remaining_budget = budget - len(selected_indices)
+            for _, idx in tier_values[:remaining_budget]:
+                selected_indices.append(idx)
+            
+            # Remove selected solutions from remaining indices
+            for idx in tier_indices:
+                if idx in remaining_indices:
+                    remaining_indices.remove(idx)
+            
+            tier += 1
+        
+        return selected_indices
