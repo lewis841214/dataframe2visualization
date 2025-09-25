@@ -100,49 +100,52 @@ class InteractiveTableDisplay:
         """
         html_parts = []
         
-        # CSS styles
-        html_parts.append("""
+        # Get configurable CSS width from session state
+        css_width = st.session_state.get("text_css_width", 200)
+        
+        # CSS styles with configurable width
+        html_parts.append(f"""
         <style>
-        .dataframe-table {
+        .dataframe-table {{
             width: 100%;
             border-collapse: collapse;
             font-family: Arial, sans-serif;
             font-size: 14px;
-        }
-        .dataframe-table th, .dataframe-table td {
+        }}
+        .dataframe-table th, .dataframe-table td {{
             border: 1px solid #ddd;
             padding: 8px;
             text-align: left;
             vertical-align: top;
-        }
-        .dataframe-table th {
+        }}
+        .dataframe-table th {{
             background-color: #f2f2f2;
             font-weight: bold;
-        }
-        .dataframe-table tr:nth-child(even) {
+        }}
+        .dataframe-table tr:nth-child(even) {{
             background-color: #f9f9f9;
-        }
-        .dataframe-table tr:hover {
+        }}
+        .dataframe-table tr:hover {{
             background-color: #f5f5f5;
-        }
-        .clickable-image {
+        }}
+        .clickable-image {{
             cursor: pointer;
             border: 2px solid transparent;
             transition: border-color 0.3s;
-        }
-        .clickable-image:hover {
+        }}
+        .clickable-image:hover {{
             border-color: #007bff;
-        }
-        .image-cell {
+        }}
+        .image-cell {{
             text-align: center;
             vertical-align: middle;
-        }
-        .text-cell {
-            max-width: 200px;
+        }}
+        .text-cell {{
+            max-width: {css_width}px;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
-        }
+        }}
         </style>
         """)
         
@@ -252,10 +255,13 @@ class InteractiveTableDisplay:
             # If pd.isna fails, assume it's not None
             pass
         
-        # Truncate long text
+        # Get configurable character limit from session state
+        char_limit = st.session_state.get("text_char_limit", 50)
+        
+        # Truncate long text based on configurable limit
         text = str(cell_value)
-        if len(text) > 50:
-            text = text[:47] + "..."
+        if len(text) > char_limit:
+            text = text[:char_limit-3] + "..."
         
         return f'<span title="{str(cell_value)}">{text}</span>'
     

@@ -418,7 +418,7 @@ class TableControls:
         """Render display settings controls."""
         st.markdown("#### Display Settings")
         
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         
         with col1:
             # Show/hide controls
@@ -437,6 +437,32 @@ class TableControls:
                 value=AppConfig.DEFAULT_TABLE_HEIGHT,
                 step=50,
                 help="Height of the table in pixels"
+            )
+        
+        with col3:
+            # Text truncation settings
+            st.markdown("**Text Display:**")
+            
+            # Character limit for text truncation
+            char_limit = st.number_input(
+                "Max characters per cell",
+                min_value=10,
+                max_value=1000,
+                value=50,
+                step=10,
+                key="text_char_limit",
+                help="Maximum number of characters to display in each cell"
+            )
+            
+            # CSS width limit
+            css_width = st.number_input(
+                "Max cell width (px)",
+                min_value=100,
+                max_value=800,
+                value=200,
+                step=50,
+                key="text_css_width",
+                help="Maximum width of table cells in pixels"
             )
     
     def _prepare_dataframe_for_export(self, df: pd.DataFrame) -> pd.DataFrame:
