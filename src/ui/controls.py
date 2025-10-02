@@ -139,102 +139,214 @@ class TableControls:
             
             # Get unique values for the column
             unique_values = df[col_name].dropna().unique()
+            is_numeric = pd.api.types.is_numeric_dtype(df[col_name])
             
-            if len(unique_values) <= 20:  # Only show filter if reasonable number of values
-                col1, col2 = st.columns([2, 1])
+            # Determine if this is a discrete or continuous column
+            is_discrete = len(unique_values) <= 20
+            is_continuous_numeric = is_numeric and not is_discrete
+            
+            # Show filters for discrete columns or continuous numeric columns
+            if is_discrete or is_continuous_numeric:
+                st.markdown(f"**{col_name}**")
                 
-                with col1:
-                    # Filter operation
-                    filter_op = st.selectbox(
-                        f"Filter operation for {col_name}",
-                        options=["equals", "contains", "starts with", "ends with", "greater than", "less than"],
-                        key=f"filter_op_{col_name}",
-                        help=f"Choose how to filter {col_name}"
+                if is_continuous_numeric:
+                    # Continuous numeric column - only show range-based filters
+                    self._render_continuous_numeric_filter(df, col_name)
+                else:
+                    # Discrete column - show all filter types
+                    self._render_discrete_column_filter(df, col_name, unique_values, is_numeric)
+    
+    def _render_continuous_numeric_filter(self, df: pd.DataFrame, col_name: str) -> None:
+        """
+        Render filter controls for continuous numeric columns.
+        
+        Args:
+            df: DataFrame containing the column
+            col_name: Name of the numeric column to filter
+        """
+        min_val = float(df[col_name].min())
+        max_val = float(df[col_name].max())
+        
+        # Display value range hint
+        st.caption(f"📊 Data Range: [{min_val:.4g}, {max_val:.4g}]")
+        
+        col1, col2, col3 = st.columns([1, 2, 1])
+        
+        with col1:
+            # Filter operation selection
+            filter_op = st.selectbox(
+                "Operation",
+                options=["greater than", "less than", "between"],
+                key=f"filter_op_{col_name}",
+                help=f"Choose filtering operation for {col_name}"
+            )
+        
+        with col2:
+            if filter_op == "between":
+                # Range filter
+                col2a, col2b = st.columns(2)
+                
+                with col2a:
+                    lower_bound = st.number_input(
+                        "Min value",
+                        value=min_val,
+                        format="%.6g",
+                        key=f"filter_lower_{col_name}",
+                        help=f"Lower bound (data range: [{min_val:.4g}, {max_val:.4g}])"
                     )
                 
-                with col2:
-                    # Filter values
-                    if filter_op in ["equals", "contains", "starts with", "ends with"]:
-                        col2a, col2b = st.columns([3, 1])
-                        
-                        with col2a:
-                            selected_values = st.multiselect(
-                                f"Values for {col_name}",
-                                options=unique_values,
-                                default=self.column_filters.get(col_name, {}).get('values', []),
-                                key=f"filter_values_{col_name}",
-                                help=f"Select values to filter {col_name}"
-                            )
-                        
-                        with col2b:
-                            if st.button("Clear", key=f"clear_filter_{col_name}", help=f"Clear filter for {col_name}"):
-                                if col_name in self.column_filters:
-                                    del self.column_filters[col_name]
-                                st.rerun()
-                        
-                        if selected_values:
-                            self.column_filters[col_name] = {
-                                'operation': filter_op,
-                                'values': selected_values
-                            }
-                        elif col_name in self.column_filters:
+                with col2b:
+                    upper_bound = st.number_input(
+                        "Max value",
+                        value=max_val,
+                        format="%.6g",
+                        key=f"filter_upper_{col_name}",
+                        help=f"Upper bound (data range: [{min_val:.4g}, {max_val:.4g}])"
+                    )
+                
+                # Validation - just show warnings, still apply filter
+                if lower_bound > upper_bound:
+                    st.warning(f"⚠️ Min value ({lower_bound:.4g}) should be ≤ Max value ({upper_bound:.4g})")
+                
+                if lower_bound < min_val or upper_bound > max_val:
+                    st.info(f"ℹ️ Filter range extends beyond data range [{min_val:.4g}, {max_val:.4g}]")
+                
+                # Always apply the filter
+                self.column_filters[col_name] = {
+                    'operation': filter_op,
+                    'lower_bound': lower_bound,
+                    'upper_bound': upper_bound
+                }
+            
+            elif filter_op == "greater than":
+                threshold = st.number_input(
+                    "Threshold value",
+                    value=min_val,
+                    format="%.6g",
+                    key=f"filter_threshold_{col_name}",
+                    help=f"Values greater than this (data range: [{min_val:.4g}, {max_val:.4g}])"
+                )
+                
+                # Show info if outside data range
+                if threshold < min_val or threshold > max_val:
+                    st.info(f"ℹ️ Threshold is outside data range [{min_val:.4g}, {max_val:.4g}]")
+                
+                # Always apply the filter
+                self.column_filters[col_name] = {
+                    'operation': filter_op,
+                    'threshold': threshold
+                }
+            
+            else:  # less than
+                threshold = st.number_input(
+                    "Threshold value",
+                    value=max_val,
+                    format="%.6g",
+                    key=f"filter_threshold_{col_name}",
+                    help=f"Values less than this (data range: [{min_val:.4g}, {max_val:.4g}])"
+                )
+                
+                # Show info if outside data range
+                if threshold < min_val or threshold > max_val:
+                    st.info(f"ℹ️ Threshold is outside data range [{min_val:.4g}, {max_val:.4g}]")
+                
+                # Always apply the filter
+                self.column_filters[col_name] = {
+                    'operation': filter_op,
+                    'threshold': threshold
+                }
+        
+        with col3:
+            if st.button("Clear", key=f"clear_filter_{col_name}", help=f"Clear filter for {col_name}"):
+                if col_name in self.column_filters:
+                    del self.column_filters[col_name]
+                st.rerun()
+    
+    def _render_discrete_column_filter(self, df: pd.DataFrame, col_name: str, 
+                                      unique_values: np.ndarray, is_numeric: bool) -> None:
+        """
+        Render filter controls for discrete columns (≤20 unique values).
+        
+        Args:
+            df: DataFrame containing the column
+            col_name: Name of the column to filter
+            unique_values: Array of unique values in the column
+            is_numeric: Whether the column is numeric type
+        """
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            # Filter operation options depend on whether column is numeric
+            if is_numeric:
+                filter_options = ["equals", "greater than", "less than"]
+            else:
+                filter_options = ["equals", "contains", "starts with", "ends with"]
+            
+            filter_op = st.selectbox(
+                "Operation",
+                options=filter_options,
+                key=f"filter_op_{col_name}",
+                help=f"Choose how to filter {col_name}"
+            )
+        
+        with col2:
+            # Filter values
+            if filter_op in ["equals", "contains", "starts with", "ends with"]:
+                col2a, col2b = st.columns([3, 1])
+                
+                with col2a:
+                    selected_values = st.multiselect(
+                        "Values",
+                        options=unique_values,
+                        default=self.column_filters.get(col_name, {}).get('values', []),
+                        key=f"filter_values_{col_name}",
+                        help=f"Select values to filter {col_name}"
+                    )
+                
+                with col2b:
+                    if st.button("Clear", key=f"clear_filter_{col_name}", help=f"Clear filter for {col_name}"):
+                        if col_name in self.column_filters:
                             del self.column_filters[col_name]
-                    
-                    elif filter_op in ["greater than", "less than"]:
-                        # For numeric comparisons
-                        if pd.api.types.is_numeric_dtype(df[col_name]):
-                            min_val = float(df[col_name].min())
-                            max_val = float(df[col_name].max())
-                            
-                            if filter_op == "greater than":
-                                col2a, col2b = st.columns([3, 1])
-                                
-                                with col2a:
-                                    threshold = st.number_input(
-                                        f"Greater than value for {col_name}",
-                                        min_value=min_val,
-                                        max_value=max_val,
-                                        value=min_val,
-                                        step=(max_val - min_val) / 100,
-                                        key=f"filter_threshold_{col_name}"
-                                    )
-                                
-                                with col2b:
-                                    if st.button("Clear", key=f"clear_filter_{col_name}", help=f"Clear filter for {col_name}"):
-                                        if col_name in self.column_filters:
-                                            del self.column_filters[col_name]
-                                        st.rerun()
-                                
-                                self.column_filters[col_name] = {
-                                    'operation': filter_op,
-                                    'threshold': threshold
-                                }
-                                
-                            else:  # less than
-                                col2a, col2b = st.columns([3, 1])
-                                
-                                with col2a:
-                                    threshold = st.number_input(
-                                        f"Less than value for {col_name}",
-                                        min_value=min_val,
-                                        max_value=max_val,
-                                        value=max_val,
-                                        step=(max_val - min_val) / 100,
-                                        key=f"filter_threshold_{col_name}"
-                                    )
-                                
-                                with col2b:
-                                    if st.button("Clear", key=f"clear_filter_{col_name}", help=f"Clear filter for {col_name}"):
-                                        if col_name in self.column_filters:
-                                            del self.column_filters[col_name]
-                                        st.rerun()
-                                
-                                self.column_filters[col_name] = {
-                                    'operation': filter_op,
-                                    'threshold': threshold
-                                }
-                        else:
-                            st.warning(f"Column {col_name} is not numeric for comparison operations")
+                        st.rerun()
+                
+                if selected_values:
+                    self.column_filters[col_name] = {
+                        'operation': filter_op,
+                        'values': selected_values
+                    }
+                elif col_name in self.column_filters:
+                    del self.column_filters[col_name]
+            
+            elif filter_op in ["greater than", "less than"]:
+                # For numeric comparisons on discrete numeric columns
+                min_val = float(df[col_name].min())
+                max_val = float(df[col_name].max())
+                
+                col2a, col2b = st.columns([3, 1])
+                
+                with col2a:
+                    threshold = st.number_input(
+                        f"{filter_op.title()} value",
+                        value=min_val if filter_op == "greater than" else max_val,
+                        format="%.6g",
+                        key=f"filter_threshold_{col_name}",
+                        help=f"Data range: [{min_val:.4g}, {max_val:.4g}]"
+                    )
+                
+                with col2b:
+                    if st.button("Clear", key=f"clear_filter_{col_name}", help=f"Clear filter for {col_name}"):
+                        if col_name in self.column_filters:
+                            del self.column_filters[col_name]
+                        st.rerun()
+                
+                # Show info if outside data range
+                if threshold < min_val or threshold > max_val:
+                    st.info(f"ℹ️ Threshold is outside data range [{min_val:.4g}, {max_val:.4g}]")
+                
+                self.column_filters[col_name] = {
+                    'operation': filter_op,
+                    'threshold': threshold
+                }
     
     def _apply_search_filter(self, df: pd.DataFrame, search_term: str) -> pd.DataFrame:
         """
@@ -315,6 +427,15 @@ class TableControls:
                 threshold = filter_config.get('threshold')
                 if threshold is not None:
                     filtered_df = filtered_df[filtered_df[col_name] < threshold]
+            
+            elif operation == "between":
+                lower_bound = filter_config.get('lower_bound')
+                upper_bound = filter_config.get('upper_bound')
+                if lower_bound is not None and upper_bound is not None:
+                    filtered_df = filtered_df[
+                        (filtered_df[col_name] >= lower_bound) & 
+                        (filtered_df[col_name] <= upper_bound)
+                    ]
         
         return filtered_df
     
@@ -502,7 +623,13 @@ class TableControls:
             elif operation in ["greater than", "less than"]:
                 threshold = filter_config.get('threshold')
                 if threshold is not None:
-                    active_filters.append(f"**{col_name}** {operation} {threshold}")
+                    active_filters.append(f"**{col_name}** {operation} {threshold:.4g}")
+            
+            elif operation == "between":
+                lower_bound = filter_config.get('lower_bound')
+                upper_bound = filter_config.get('upper_bound')
+                if lower_bound is not None and upper_bound is not None:
+                    active_filters.append(f"**{col_name}** between [{lower_bound:.4g}, {upper_bound:.4g}]")
         
         if active_filters:
             for filter_desc in active_filters:
