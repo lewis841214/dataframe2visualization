@@ -10,6 +10,7 @@ import seaborn as sns
 import plotly.express as px
 import plotly.graph_objects as go
 from typing import Any, Dict, List, Optional, Tuple
+from scipy.stats import rankdata
 from ..config.settings import AppConfig
 
 class InteractiveTableDisplay:
@@ -520,6 +521,32 @@ class InteractiveTableDisplay:
         numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
         return numeric_cols
     
+    def _normalize_to_percentiles(self, data: pd.Series) -> np.ndarray:
+        """
+        Normalize numeric data to percentiles for density-aware coloring.
+        
+        This method converts values to their percentile ranks, so that colors
+        are distributed based on data density rather than absolute values.
+        
+        Args:
+            data: Numeric data to normalize
+            
+        Returns:
+            Array of percentile values (0-1) representing data density
+            
+        Example:
+            If 99% of data is between 0-1 and 1% is between 1-1000,
+            the 0-1 range will use 99% of the color spectrum.
+        """
+        # Use rankdata to compute percentile ranks
+        # method='average' handles ties by averaging their ranks
+        ranks = rankdata(data, method='average')
+        
+        # Normalize ranks to 0-1 range (percentiles)
+        percentiles = (ranks - 1) / (len(data) - 1) if len(data) > 1 else np.array([0.5])
+        
+        return percentiles
+    
     def _validate_columns_for_plotting(self, df: pd.DataFrame, col1: str, col2: str) -> Tuple[bool, str]:
         """Validate that selected columns are suitable for scatter plotting."""
         if col1 not in df.columns or col2 not in df.columns:
@@ -733,11 +760,14 @@ class InteractiveTableDisplay:
             
             # Check if heat column is numeric or categorical
             if pd.api.types.is_numeric_dtype(heat_data):
-                # Numeric coloring
+                # Numeric coloring with percentile normalization (density-aware)
+                # Convert values to percentiles so colors reflect data density
+                percentile_values = self._normalize_to_percentiles(heat_data)
+                
                 scatter = ax.scatter(
                     x_data, 
                     y_data, 
-                    c=heat_data, 
+                    c=percentile_values,  # Use percentiles instead of raw values
                     cmap='viridis', 
                     alpha=0.7, 
                     s=80,
@@ -745,9 +775,20 @@ class InteractiveTableDisplay:
                     linewidth=0.5
                 )
                 
-                # Add colorbar
+                # Add colorbar with percentile-based labeling
                 cbar = plt.colorbar(scatter, ax=ax)
-                cbar.set_label(f'{heat_column} (Heat Value)', fontsize=10, fontweight='bold')
+                cbar.set_label(f'{heat_column} (Percentile-based)', fontsize=10, fontweight='bold')
+                
+                # Add annotation about normalization
+                min_val = heat_data.min()
+                max_val = heat_data.max()
+                median_val = heat_data.median()
+                ax.text(0.02, 0.02, 
+                       f'Value range: [{min_val:.3g}, {max_val:.3g}]\nMedian: {median_val:.3g}\nColors: density-based',
+                       transform=ax.transAxes, 
+                       verticalalignment='bottom',
+                       bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.7),
+                       fontsize=8)
             else:
                 # Categorical coloring
                 unique_categories = heat_data.unique()
@@ -931,11 +972,14 @@ class InteractiveTableDisplay:
             
             # Check if heat column is numeric or categorical
             if pd.api.types.is_numeric_dtype(heat_data):
-                # Numeric coloring
+                # Numeric coloring with percentile normalization (density-aware)
+                # Convert values to percentiles so colors reflect data density
+                percentile_values = self._normalize_to_percentiles(heat_data)
+                
                 scatter = ax.scatter(
                     x_data, 
                     y_data, 
-                    c=heat_data, 
+                    c=percentile_values,  # Use percentiles instead of raw values
                     cmap='viridis', 
                     alpha=0.7, 
                     s=80,
@@ -943,9 +987,20 @@ class InteractiveTableDisplay:
                     linewidth=0.5
                 )
                 
-                # Add colorbar
+                # Add colorbar with percentile-based labeling
                 cbar = plt.colorbar(scatter, ax=ax)
-                cbar.set_label(f'{heat_column} (Heat Value)', fontsize=10, fontweight='bold')
+                cbar.set_label(f'{heat_column} (Percentile-based)', fontsize=10, fontweight='bold')
+                
+                # Add annotation about normalization
+                min_val = heat_data.min()
+                max_val = heat_data.max()
+                median_val = heat_data.median()
+                ax.text(0.02, 0.02, 
+                       f'Value range: [{min_val:.3g}, {max_val:.3g}]\nMedian: {median_val:.3g}\nColors: density-based',
+                       transform=ax.transAxes, 
+                       verticalalignment='bottom',
+                       bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.7),
+                       fontsize=8)
             else:
                 # Categorical coloring
                 unique_categories = heat_data.unique()
@@ -1204,7 +1259,22 @@ class InteractiveTableDisplay:
             heat_data = valid_data[heat_column]
             
             if pd.api.types.is_numeric_dtype(heat_data):
-                # Numeric coloring with colorscale
+                # Numeric coloring with percentile normalization (density-aware)
+                # Convert values to percentiles so colors reflect data density
+                percentile_values = self._normalize_to_percentiles(heat_data)
+                
+                # Create hover text with both original value and percentile
+                if flow_name_column:
+                    custom_hover = [
+                        f"Value: {val:.3g} (Percentile: {perc*100:.1f}%)<br>{name}"
+                        for val, perc, name in zip(heat_data, percentile_values, hover_text)
+                    ]
+                else:
+                    custom_hover = [
+                        f"Value: {val:.3g} (Percentile: {perc*100:.1f}%)"
+                        for val, perc in zip(heat_data, percentile_values)
+                    ]
+                
                 fig.add_trace(go.Scatter3d(
                     x=valid_data[col1],
                     y=valid_data[col2],
@@ -1212,14 +1282,17 @@ class InteractiveTableDisplay:
                     mode='markers',
                     marker=dict(
                         size=6,
-                        color=heat_data,
+                        color=percentile_values,  # Use percentiles instead of raw values
                         colorscale='Viridis',
                         showscale=True,
-                        colorbar=dict(title=heat_column),
+                        colorbar=dict(
+                            title=f'{heat_column}<br>(Percentile)',
+                            tickformat='.0%'
+                        ),
                         line=dict(width=0.5, color='DarkSlateGrey')
                     ),
-                    text=hover_text,
-                    hovertemplate=f'<b>{col1}</b>: %{{x}}<br><b>{col2}</b>: %{{y}}<br><b>{col3}</b>: %{{z}}<br><b>{heat_column}</b>: %{{marker.color}}<br>%{{text}}<extra></extra>' if flow_name_column else f'<b>{col1}</b>: %{{x}}<br><b>{col2}</b>: %{{y}}<br><b>{col3}</b>: %{{z}}<br><b>{heat_column}</b>: %{{marker.color}}<extra></extra>',
+                    text=custom_hover,
+                    hovertemplate=f'<b>{col1}</b>: %{{x}}<br><b>{col2}</b>: %{{y}}<br><b>{col3}</b>: %{{z}}<br><b>{heat_column}</b>: %{{text}}<extra></extra>',
                     name='Data Points'
                 ))
             else:
