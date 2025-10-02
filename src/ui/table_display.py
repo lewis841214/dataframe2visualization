@@ -817,26 +817,37 @@ class InteractiveTableDisplay:
         # Create figure
         fig, ax = plt.subplots(figsize=(width, height))
         
-        # Get valid data
-        columns_needed = [col1, col2]
-        if heat_column:
-            columns_needed.append(heat_column)
-        if flow_name_column:
-            columns_needed.append(flow_name_column)
+        # Get valid data - ensure consistent filtering
+        # First, get the base data for the two main columns
+        base_data = df[[col1, col2]].dropna()
         
-        valid_data = df[columns_needed].dropna()
-        
-        if len(valid_data) == 0:
+        if len(base_data) == 0:
             st.error("❌ No valid data points found for the selected columns.")
             return
         
+        # Then add additional columns if they exist, but only for rows that are already valid
+        valid_data = base_data.copy()
+        if heat_column and heat_column in df.columns:
+            valid_data[heat_column] = df.loc[base_data.index, heat_column]
+        if flow_name_column and flow_name_column in df.columns:
+            valid_data[flow_name_column] = df.loc[base_data.index, flow_name_column]
+        
         # Create scatter plot
         if heat_column and heat_column in valid_data.columns:
-            # Color by heat column
+            # Color by heat column - ensure all arrays have the same length
+            x_data = valid_data[col1].values
+            y_data = valid_data[col2].values
+            c_data = valid_data[heat_column].values
+            
+            # Additional safety check for array sizes
+            if len(x_data) != len(y_data) or len(x_data) != len(c_data):
+                st.error(f"❌ Data size mismatch: x={len(x_data)}, y={len(y_data)}, c={len(c_data)}")
+                return
+            
             scatter = ax.scatter(
-                valid_data[col1], 
-                valid_data[col2], 
-                c=valid_data[heat_column], 
+                x_data, 
+                y_data, 
+                c=c_data, 
                 cmap='viridis', 
                 alpha=0.7, 
                 s=80,
@@ -848,10 +859,13 @@ class InteractiveTableDisplay:
             cbar = plt.colorbar(scatter, ax=ax)
             cbar.set_label(f'{heat_column} (Heat Value)', fontsize=10, fontweight='bold')
         else:
-            # Default color
+            # Default color - ensure consistent data handling
+            x_data = valid_data[col1].values
+            y_data = valid_data[col2].values
+            
             scatter = ax.scatter(
-                valid_data[col1], 
-                valid_data[col2], 
+                x_data, 
+                y_data, 
                 alpha=0.7, 
                 s=80,
                 color='steelblue',
@@ -1089,25 +1103,35 @@ class InteractiveTableDisplay:
         # Create figure
         fig, ax = plt.subplots(figsize=(width, height))
         
-        # Get valid data
-        columns_needed = [col1, col2]
-        if heat_column:
-            columns_needed.append(heat_column)
-        if flow_name_column:
-            columns_needed.append(flow_name_column)
+        # Get valid data - ensure consistent filtering
+        # First, get the base data for the two main columns
+        base_data = df[[col1, col2]].dropna()
         
-        valid_data = df[columns_needed].dropna()
-        
-        if len(valid_data) == 0:
+        if len(base_data) == 0:
             return fig
+        
+        # Then add additional columns if they exist, but only for rows that are already valid
+        valid_data = base_data.copy()
+        if heat_column and heat_column in df.columns:
+            valid_data[heat_column] = df.loc[base_data.index, heat_column]
+        if flow_name_column and flow_name_column in df.columns:
+            valid_data[flow_name_column] = df.loc[base_data.index, flow_name_column]
         
         # Create scatter plot
         if heat_column and heat_column in valid_data.columns:
-            # Color by heat column
+            # Color by heat column - ensure all arrays have the same length
+            x_data = valid_data[col1].values
+            y_data = valid_data[col2].values
+            c_data = valid_data[heat_column].values
+            
+            # Additional safety check for array sizes
+            if len(x_data) != len(y_data) or len(x_data) != len(c_data):
+                return fig
+            
             scatter = ax.scatter(
-                valid_data[col1], 
-                valid_data[col2], 
-                c=valid_data[heat_column], 
+                x_data, 
+                y_data, 
+                c=c_data, 
                 cmap='viridis', 
                 alpha=0.7, 
                 s=80,
@@ -1119,10 +1143,13 @@ class InteractiveTableDisplay:
             cbar = plt.colorbar(scatter, ax=ax)
             cbar.set_label(f'{heat_column} (Heat Value)', fontsize=10, fontweight='bold')
         else:
-            # Default color
+            # Default color - ensure consistent data handling
+            x_data = valid_data[col1].values
+            y_data = valid_data[col2].values
+            
             scatter = ax.scatter(
-                valid_data[col1], 
-                valid_data[col2], 
+                x_data, 
+                y_data, 
                 alpha=0.7, 
                 s=80,
                 color='steelblue',

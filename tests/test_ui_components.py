@@ -5,6 +5,8 @@ Tests for UI components.
 import pytest
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+from unittest.mock import patch, MagicMock
 from src.ui.table_display import InteractiveTableDisplay
 from src.ui.controls import TableControls
 
