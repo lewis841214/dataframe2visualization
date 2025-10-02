@@ -7,6 +7,8 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import plotly.express as px
+import plotly.graph_objects as go
 from typing import Any, Dict, List, Optional, Tuple
 from ..config.settings import AppConfig
 
@@ -409,49 +411,109 @@ class InteractiveTableDisplay:
             st.info(f"Available numeric columns: {numeric_cols}")
             return
         
-        # Column selection
-        col1, col2 = st.columns(2)
+        # Plot type selection
+        st.markdown("**📊 Plot Type Selection**")
+        plot_type = st.radio(
+            "Select Plot Type",
+            ["2D Scatter Plot", "3D Scatter Plot"],
+            key="plot_type_selector",
+            horizontal=True
+        )
         
-        with col1:
-            selected_col1 = st.selectbox(
-                "Select First Column (X-axis)",
-                numeric_cols,
-                key="scatter_col1"
-            )
+        st.markdown("---")
         
-        with col2:
-            selected_col2 = st.selectbox(
-                "Select Second Column (Y-axis)",
-                numeric_cols,
-                key="scatter_col2"
-            )
+        # Column selection based on plot type
+        if plot_type == "2D Scatter Plot":
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                selected_col1 = st.selectbox(
+                    "Select First Column (X-axis)",
+                    numeric_cols,
+                    key="scatter_col1"
+                )
+            
+            with col2:
+                selected_col2 = st.selectbox(
+                    "Select Second Column (Y-axis)",
+                    numeric_cols,
+                    key="scatter_col2"
+                )
+            
+            selected_col3 = None
+        else:  # 3D Scatter Plot
+            if len(numeric_cols) < 3:
+                st.warning("⚠️ Need at least 3 numeric columns for 3D scatter plotting.")
+                st.info(f"Available numeric columns: {numeric_cols}")
+                return
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                selected_col1 = st.selectbox(
+                    "Select X-axis Column",
+                    numeric_cols,
+                    key="scatter_col1_3d"
+                )
+            
+            with col2:
+                selected_col2 = st.selectbox(
+                    "Select Y-axis Column",
+                    numeric_cols,
+                    key="scatter_col2_3d"
+                )
+            
+            with col3:
+                selected_col3 = st.selectbox(
+                    "Select Z-axis Column",
+                    numeric_cols,
+                    key="scatter_col3_3d"
+                )
         
         # Validate selection
-        is_valid, error_msg = self._validate_columns_for_plotting(df, selected_col1, selected_col2)
+        if plot_type == "2D Scatter Plot":
+            is_valid, error_msg = self._validate_columns_for_plotting(df, selected_col1, selected_col2)
+        else:
+            is_valid, error_msg = self._validate_columns_for_3d_plotting(df, selected_col1, selected_col2, selected_col3)
         
         if not is_valid:
             st.error(f"❌ {error_msg}")
             return
         
-        # Calculate statistics
-        stats = self._calculate_correlation_statistics(df, selected_col1, selected_col2)
-        
-        if not stats:
-            st.error("❌ Unable to calculate statistics.")
-            return
-        
-        # Display statistics
-        self._display_statistics_summary(stats)
-        
-        # Display detailed statistics
-        self._display_detailed_statistics(stats, selected_col1, selected_col2)
-        
-        # Create and display scatter plot with performance indicator
-        with st.spinner(f"Generating scatter plot for {len(df)} data points..."):
-            self._create_scatter_plot(df, selected_col1, selected_col2, stats)
-        
-        # Display interpretation
-        self._display_correlation_interpretation(stats, selected_col1, selected_col2)
+        # Calculate statistics (for 2D only, 3D will show basic stats)
+        if plot_type == "2D Scatter Plot":
+            stats = self._calculate_correlation_statistics(df, selected_col1, selected_col2)
+            
+            if not stats:
+                st.error("❌ Unable to calculate statistics.")
+                return
+            
+            # Display statistics
+            self._display_statistics_summary(stats)
+            
+            # Display detailed statistics
+            self._display_detailed_statistics(stats, selected_col1, selected_col2)
+            
+            # Create and display scatter plot with performance indicator
+            with st.spinner(f"Generating 2D scatter plot for {len(df)} data points..."):
+                self._create_scatter_plot(df, selected_col1, selected_col2, stats)
+            
+            # Display interpretation
+            self._display_correlation_interpretation(stats, selected_col1, selected_col2)
+        else:
+            # 3D Plot
+            stats = self._calculate_3d_statistics(df, selected_col1, selected_col2, selected_col3)
+            
+            if not stats:
+                st.error("❌ Unable to calculate statistics.")
+                return
+            
+            # Display 3D statistics
+            self._display_3d_statistics_summary(stats, selected_col1, selected_col2, selected_col3)
+            
+            # Create and display 3D scatter plot
+            with st.spinner(f"Generating 3D scatter plot for {len(df)} data points..."):
+                self._create_3d_scatter_plot(df, selected_col1, selected_col2, selected_col3, stats)
     
     def _get_numeric_columns(self, df: pd.DataFrame) -> List[str]:
         """Get list of numeric columns from DataFrame."""
@@ -1014,4 +1076,260 @@ class InteractiveTableDisplay:
             st.warning("⚠️ **Moderate Correlation:** There is some relationship, but it may not be strong enough for reliable predictions.")
         else:
             st.info("ℹ️ **Weak Correlation:** Little to no linear relationship detected between these variables.")
+    
+    def _validate_columns_for_3d_plotting(self, df: pd.DataFrame, col1: str, col2: str, col3: str) -> Tuple[bool, str]:
+        """Validate that selected columns are suitable for 3D scatter plotting."""
+        if col1 not in df.columns or col2 not in df.columns or col3 not in df.columns:
+            return False, "One or more selected columns do not exist in the DataFrame."
+        
+        if col1 == col2 or col1 == col3 or col2 == col3:
+            return False, "Please select three different columns for 3D scatter plotting."
+        
+        # Check if columns are numeric
+        if not pd.api.types.is_numeric_dtype(df[col1]) or not pd.api.types.is_numeric_dtype(df[col2]) or not pd.api.types.is_numeric_dtype(df[col3]):
+            return False, "All three columns must be numeric for 3D scatter plotting."
+        
+        # Check for sufficient data
+        valid_data = df[[col1, col2, col3]].dropna()
+        if len(valid_data) < 2:
+            return False, "Insufficient data for plotting. Need at least 2 valid data points."
+        
+        return True, "Columns are valid for 3D plotting."
+    
+    def _calculate_3d_statistics(self, df: pd.DataFrame, col1: str, col2: str, col3: str) -> Dict[str, float]:
+        """Calculate statistics for three columns."""
+        valid_data = df[[col1, col2, col3]].dropna()
+        
+        if len(valid_data) < 2:
+            return {}
+        
+        stats = {
+            'n_points': len(valid_data),
+            'col1_mean': valid_data[col1].mean(),
+            'col1_std': valid_data[col1].std(),
+            'col1_min': valid_data[col1].min(),
+            'col1_max': valid_data[col1].max(),
+            'col2_mean': valid_data[col2].mean(),
+            'col2_std': valid_data[col2].std(),
+            'col2_min': valid_data[col2].min(),
+            'col2_max': valid_data[col2].max(),
+            'col3_mean': valid_data[col3].mean(),
+            'col3_std': valid_data[col3].std(),
+            'col3_min': valid_data[col3].min(),
+            'col3_max': valid_data[col3].max(),
+        }
+        
+        return stats
+    
+    def _display_3d_statistics_summary(self, stats: Dict[str, float], col1: str, col2: str, col3: str) -> None:
+        """Display summary statistics for 3D data."""
+        st.subheader("📈 Statistical Summary (3D)")
+        
+        col_stat1, col_stat2, col_stat3 = st.columns(3)
+        
+        with col_stat1:
+            st.write(f"**{col1} (X-axis):**")
+            st.write(f"- Mean: {stats['col1_mean']:.3f}")
+            st.write(f"- Std Dev: {stats['col1_std']:.3f}")
+            st.write(f"- Range: {stats['col1_min']:.3f} to {stats['col1_max']:.3f}")
+        
+        with col_stat2:
+            st.write(f"**{col2} (Y-axis):**")
+            st.write(f"- Mean: {stats['col2_mean']:.3f}")
+            st.write(f"- Std Dev: {stats['col2_std']:.3f}")
+            st.write(f"- Range: {stats['col2_min']:.3f} to {stats['col2_max']:.3f}")
+        
+        with col_stat3:
+            st.write(f"**{col3} (Z-axis):**")
+            st.write(f"- Mean: {stats['col3_mean']:.3f}")
+            st.write(f"- Std Dev: {stats['col3_std']:.3f}")
+            st.write(f"- Range: {stats['col3_min']:.3f} to {stats['col3_max']:.3f}")
+        
+        st.metric("Total Data Points", stats['n_points'])
+    
+    def _create_3d_scatter_plot(self, df: pd.DataFrame, col1: str, col2: str, col3: str, stats: Dict[str, float]) -> None:
+        """Create and display interactive 3D scatter plot with Plotly."""
+        st.subheader("🎨 3D Scatter Plot")
+        
+        # Heat column and flow name selection
+        st.markdown("**🔥 Visualization Options**")
+        col_heat, col_flow = st.columns(2)
+        
+        with col_heat:
+            # Get all columns for heat mapping (both numeric and categorical)
+            all_cols = df.columns.tolist()
+            heat_column = st.selectbox(
+                "Select Heat Column (for coloring)",
+                ["None"] + all_cols,
+                key="heat_column_selector_3d"
+            )
+            if heat_column == "None":
+                heat_column = None
+        
+        with col_flow:
+            # Get all columns for flow name display
+            all_cols = df.columns.tolist()
+            flow_name_column = st.selectbox(
+                "Select Flow Name Column (for hover labels)",
+                ["None"] + all_cols,
+                key="flow_name_selector_3d"
+            )
+            if flow_name_column == "None":
+                flow_name_column = None
+        
+        # Get valid data
+        columns_needed = [col1, col2, col3]
+        if heat_column:
+            columns_needed.append(heat_column)
+        if flow_name_column:
+            columns_needed.append(flow_name_column)
+        
+        valid_data = df[columns_needed].dropna()
+        
+        if len(valid_data) == 0:
+            st.error("❌ No valid data points found for the selected columns.")
+            return
+        
+        # Create 3D scatter plot
+        fig = go.Figure()
+        
+        # Prepare hover text
+        if flow_name_column:
+            hover_text = valid_data[flow_name_column].astype(str)
+        else:
+            hover_text = None
+        
+        # Handle coloring
+        if heat_column and heat_column in valid_data.columns:
+            heat_data = valid_data[heat_column]
+            
+            if pd.api.types.is_numeric_dtype(heat_data):
+                # Numeric coloring with colorscale
+                fig.add_trace(go.Scatter3d(
+                    x=valid_data[col1],
+                    y=valid_data[col2],
+                    z=valid_data[col3],
+                    mode='markers',
+                    marker=dict(
+                        size=6,
+                        color=heat_data,
+                        colorscale='Viridis',
+                        showscale=True,
+                        colorbar=dict(title=heat_column),
+                        line=dict(width=0.5, color='DarkSlateGrey')
+                    ),
+                    text=hover_text,
+                    hovertemplate=f'<b>{col1}</b>: %{{x}}<br><b>{col2}</b>: %{{y}}<br><b>{col3}</b>: %{{z}}<br><b>{heat_column}</b>: %{{marker.color}}<br>%{{text}}<extra></extra>' if flow_name_column else f'<b>{col1}</b>: %{{x}}<br><b>{col2}</b>: %{{y}}<br><b>{col3}</b>: %{{z}}<br><b>{heat_column}</b>: %{{marker.color}}<extra></extra>',
+                    name='Data Points'
+                ))
+            else:
+                # Categorical coloring - plot each category separately
+                unique_categories = heat_data.unique()
+                for category in unique_categories:
+                    mask = heat_data == category
+                    category_data = valid_data[mask]
+                    
+                    if flow_name_column:
+                        category_hover = hover_text[mask]
+                    else:
+                        category_hover = None
+                    
+                    fig.add_trace(go.Scatter3d(
+                        x=category_data[col1],
+                        y=category_data[col2],
+                        z=category_data[col3],
+                        mode='markers',
+                        marker=dict(
+                            size=6,
+                            line=dict(width=0.5, color='DarkSlateGrey')
+                        ),
+                        text=category_hover,
+                        hovertemplate=f'<b>{col1}</b>: %{{x}}<br><b>{col2}</b>: %{{y}}<br><b>{col3}</b>: %{{z}}<br><b>{heat_column}</b>: {category}<br>%{{text}}<extra></extra>' if flow_name_column else f'<b>{col1}</b>: %{{x}}<br><b>{col2}</b>: %{{y}}<br><b>{col3}</b>: %{{z}}<br><b>{heat_column}</b>: {category}<extra></extra>',
+                        name=str(category)
+                    ))
+        else:
+            # Default coloring
+            fig.add_trace(go.Scatter3d(
+                x=valid_data[col1],
+                y=valid_data[col2],
+                z=valid_data[col3],
+                mode='markers',
+                marker=dict(
+                    size=6,
+                    color='steelblue',
+                    line=dict(width=0.5, color='DarkSlateGrey')
+                ),
+                text=hover_text,
+                hovertemplate=f'<b>{col1}</b>: %{{x}}<br><b>{col2}</b>: %{{y}}<br><b>{col3}</b>: %{{z}}<br>%{{text}}<extra></extra>' if flow_name_column else f'<b>{col1}</b>: %{{x}}<br><b>{col2}</b>: %{{y}}<br><b>{col3}</b>: %{{z}}<extra></extra>',
+                name='Data Points'
+            ))
+        
+        # Update layout
+        title = f"3D Scatter Plot: {col1} vs {col2} vs {col3}"
+        if heat_column:
+            title += f" (colored by {heat_column})"
+        if flow_name_column:
+            title += f" (labels: {flow_name_column})"
+        
+        fig.update_layout(
+            title=title,
+            scene=dict(
+                xaxis_title=col1,
+                yaxis_title=col2,
+                zaxis_title=col3,
+                xaxis=dict(gridcolor='lightgray'),
+                yaxis=dict(gridcolor='lightgray'),
+                zaxis=dict(gridcolor='lightgray'),
+            ),
+            width=900,
+            height=700,
+            showlegend=True,
+            hovermode='closest'
+        )
+        
+        # Display the plot
+        st.plotly_chart(fig, use_container_width=True)
+        
+        # Download options
+        self._add_3d_plot_options(fig, col1, col2, col3, stats, heat_column, flow_name_column)
+    
+    def _add_3d_plot_options(self, fig: go.Figure, col1: str, col2: str, col3: str, 
+                            stats: Dict[str, float], heat_column: str = None, 
+                            flow_name_column: str = None) -> None:
+        """Add download options for 3D plots."""
+        st.markdown("**📥 Download Options:**")
+        col1_opt, col2_opt = st.columns(2)
+        
+        with col1_opt:
+            # Download as HTML
+            import io
+            buffer = io.StringIO()
+            fig.write_html(buffer)
+            html_bytes = buffer.getvalue().encode()
+            
+            plot_name = f"3d_scatter_{col1}_vs_{col2}_vs_{col3}"
+            if heat_column:
+                plot_name += f"_colored_by_{heat_column}"
+            if flow_name_column:
+                plot_name += f"_labeled_by_{flow_name_column}"
+            
+            st.download_button(
+                label="📊 Download Interactive 3D Plot (HTML)",
+                data=html_bytes,
+                file_name=f"{plot_name}.html",
+                mime="text/html"
+            )
+        
+        with col2_opt:
+            # Export statistics to CSV
+            stats_df = pd.DataFrame([stats])
+            csv = stats_df.to_csv(index=False)
+            st.download_button(
+                label="📈 Download Statistics CSV",
+                data=csv,
+                file_name=f"statistics_3d_{col1}_{col2}_{col3}.csv",
+                mime="text/csv"
+            )
+        
+        st.info("💡 **Tip:** The 3D plot is fully interactive! Use your mouse to rotate, zoom, and explore the data from different angles.")
     
