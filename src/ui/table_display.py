@@ -598,215 +598,37 @@ class InteractiveTableDisplay:
         # Display current size
         st.info(f"📐 Current plot size: {plot_width} × {plot_height} inches")
         
-        # Plot type selection
-        plot_type = st.selectbox(
-            "Select Plot Type",
-            ["Enhanced Seaborn", "Classic Matplotlib", "Joint Plot", "Regression Plot", "Heat Map Scatter"],
-            key="plot_type_selector"
-        )
+        # Heat column selection for Heat Map Scatter
+        col_heat, col_flow = st.columns(2)
         
-        # Heat column selection (only for Heat Map Scatter)
-        heat_column = None
-        flow_name_column = None
-        if plot_type == "Heat Map Scatter":
-            col_heat, col_flow = st.columns(2)
-            
-            with col_heat:
-                # Get all numeric columns for heat mapping
-                all_numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-                heat_column = st.selectbox(
-                    "Select Heat Column (for coloring)",
-                    ["None"] + all_numeric_cols,
-                    key="heat_column_selector"
-                )
-                if heat_column == "None":
-                    heat_column = None
-            
-            with col_flow:
-                # Get all columns for flow name display
-                all_cols = df.columns.tolist()
-                flow_name_column = st.selectbox(
-                    "Select Flow Name Column",
-                    ["None"] + all_cols,
-                    key="flow_name_selector"
-                )
-                if flow_name_column == "None":
-                    flow_name_column = None
+        with col_heat:
+            # Get all columns for heat mapping (both numeric and categorical)
+            all_cols = df.columns.tolist()
+            heat_column = st.selectbox(
+                "Select Heat Column (for coloring)",
+                ["None"] + all_cols,
+                key="heat_column_selector"
+            )
+            if heat_column == "None":
+                heat_column = None
         
-        # Get valid data
-        valid_data = df[[col1, col2]].dropna()
+        with col_flow:
+            # Get all columns for flow name display
+            all_cols = df.columns.tolist()
+            flow_name_column = st.selectbox(
+                "Select Flow Name Column",
+                ["None"] + all_cols,
+                key="flow_name_selector"
+            )
+            if flow_name_column == "None":
+                flow_name_column = None
         
-        if plot_type == "Enhanced Seaborn":
-            self._create_enhanced_seaborn_plot(valid_data, col1, col2, stats, plot_width, plot_height)
-        elif plot_type == "Classic Matplotlib":
-            self._create_classic_matplotlib_plot(valid_data, col1, col2, stats, plot_width, plot_height)
-        elif plot_type == "Joint Plot":
-            self._create_joint_plot(valid_data, col1, col2, stats, plot_width, plot_height)
-        elif plot_type == "Regression Plot":
-            self._create_regression_plot(valid_data, col1, col2, stats, plot_width, plot_height)
-        elif plot_type == "Heat Map Scatter":
-            self._create_heat_map_scatter_plot(df, col1, col2, stats, plot_width, plot_height, heat_column, flow_name_column)
+        # Create heat map scatter plot
+        self._create_heat_map_scatter_plot(df, col1, col2, stats, plot_width, plot_height, heat_column, flow_name_column)
         
         # Add plot options
-        self._add_plot_options(df, col1, col2, stats, plot_width, plot_height)
+        self._add_plot_options(df, col1, col2, stats, plot_width, plot_height, heat_column, flow_name_column)
     
-    def _create_enhanced_seaborn_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], width: int, height: int) -> None:
-        """Create enhanced seaborn scatter plot with confidence intervals."""
-        # Set seaborn style
-        sns.set_theme(style="whitegrid", palette="husl")
-        
-        # Create figure with adjustable size
-        fig, ax = plt.subplots(figsize=(width, height))
-        
-        # Create enhanced scatter plot with seaborn
-        sns.regplot(
-            data=valid_data, 
-            x=col1, 
-            y=col2,
-            scatter_kws={'alpha': 0.6, 's': 60, 'color': 'steelblue'},
-            line_kws={'color': 'red', 'linewidth': 2, 'linestyle': '--'},
-            ax=ax,
-            ci=95  # 95% confidence interval
-        )
-        
-        # Customize plot
-        ax.set_xlabel(col1, fontsize=12, fontweight='bold')
-        ax.set_ylabel(col2, fontsize=12, fontweight='bold')
-        ax.set_title(f"Enhanced Scatter Plot: {col1} vs {col2}", fontsize=14, fontweight='bold')
-        
-        # Add statistics text box
-        stats_text = f"n = {stats['n_points']}\n"
-        stats_text += f"r = {stats['correlation']:.3f}\n"
-        stats_text += f"Cov = {stats['covariance']:.3f}\n"
-        stats_text += f"95% CI shown"
-        
-        ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, 
-               verticalalignment='top', bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.9))
-        
-        plt.tight_layout()
-        st.pyplot(fig)
-        plt.close(fig)
-    
-    def _create_classic_matplotlib_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], width: int, height: int) -> None:
-        """Create classic matplotlib scatter plot."""
-        fig, ax = plt.subplots(figsize=(width, height))
-        
-        # Create scatter plot
-        scatter = ax.scatter(valid_data[col1], valid_data[col2], alpha=0.6, s=50, color='steelblue')
-        
-        # Add trend line
-        if len(valid_data) > 1:
-            z = np.polyfit(valid_data[col1], valid_data[col2], 1)
-            p = np.poly1d(z)
-            ax.plot(valid_data[col1], p(valid_data[col1]), "r--", alpha=0.8, linewidth=2, label='Trend Line')
-        
-        # Customize plot
-        ax.set_xlabel(col1, fontsize=12, fontweight='bold')
-        ax.set_ylabel(col2, fontsize=12, fontweight='bold')
-        ax.set_title(f"Classic Scatter Plot: {col1} vs {col2}", fontsize=14, fontweight='bold')
-        ax.grid(True, alpha=0.3)
-        ax.legend()
-        
-        # Add statistics text box
-        stats_text = f"n = {stats['n_points']}\n"
-        stats_text += f"r = {stats['correlation']:.3f}\n"
-        stats_text += f"Cov = {stats['covariance']:.3f}"
-        
-        ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, 
-               verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
-        
-        plt.tight_layout()
-        st.pyplot(fig)
-        plt.close(fig)
-    
-    def _create_joint_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], width: int, height: int) -> None:
-        """Create seaborn joint plot with histograms and KDE."""
-        # Set seaborn style
-        sns.set_theme(style="whitegrid", palette="husl")
-        
-        # Create joint plot with adjustable size
-        g = sns.jointplot(
-            data=valid_data,
-            x=col1,
-            y=col2,
-            kind="scatter",
-            height=height,
-            joint_kws={'alpha': 0.6, 's': 50},
-            marginal_kws={'bins': 20, 'kde': True}
-        )
-        
-        # Add trend line
-        if len(valid_data) > 1:
-            sns.regplot(
-                data=valid_data, 
-                x=col1, 
-                y=col2,
-                scatter=False,
-                line_kws={'color': 'red', 'linewidth': 2, 'linestyle': '--'},
-                ax=g.ax_joint
-            )
-        
-        # Customize titles
-        g.fig.suptitle(f"Joint Plot: {col1} vs {col2}", y=1.02, fontsize=14, fontweight='bold')
-        g.ax_joint.set_xlabel(col1, fontsize=12, fontweight='bold')
-        g.ax_joint.set_ylabel(col2, fontsize=12, fontweight='bold')
-        
-        # Add statistics text
-        stats_text = f"n = {stats['n_points']}\nr = {stats['correlation']:.3f}"
-        g.ax_joint.text(0.02, 0.98, stats_text, transform=g.ax_joint.transAxes, 
-                        verticalalignment='top', bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.9))
-        
-        plt.tight_layout()
-        st.pyplot(g.fig)
-        plt.close(g.fig)
-    
-    def _create_regression_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], width: int, height: int) -> None:
-        """Create seaborn regression plot with confidence intervals and residuals."""
-        # Set seaborn style
-        sns.set_theme(style="whitegrid", palette="husl")
-        
-        # Create subplots for main plot and residuals with adjustable size
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(width, height), height_ratios=[3, 1])
-        
-        # Main regression plot
-        sns.regplot(
-            data=valid_data, 
-            x=col1, 
-            y=col2,
-            scatter_kws={'alpha': 0.6, 's': 60, 'color': 'steelblue'},
-            line_kws={'color': 'red', 'linewidth': 2},
-            ax=ax1,
-            ci=95
-        )
-        
-        ax1.set_xlabel(col1, fontsize=12, fontweight='bold')
-        ax1.set_ylabel(col2, fontsize=12, fontweight='bold')
-        ax1.set_title(f"Regression Plot: {col1} vs {col2}", fontsize=14, fontweight='bold')
-        
-        # Residuals plot
-        if len(valid_data) > 1:
-            # Calculate residuals
-            z = np.polyfit(valid_data[col1], valid_data[col2], 1)
-            p = np.poly1d(z)
-            predicted = p(valid_data[col1])
-            residuals = valid_data[col2] - predicted
-            
-            # Plot residuals
-            ax2.scatter(valid_data[col1], residuals, alpha=0.6, s=50, color='orange')
-            ax2.axhline(y=0, color='red', linestyle='--', alpha=0.8)
-            ax2.set_xlabel(col1, fontsize=12, fontweight='bold')
-            ax2.set_ylabel('Residuals', fontsize=12, fontweight='bold')
-            ax2.set_title('Residual Plot', fontsize=12, fontweight='bold')
-            ax2.grid(True, alpha=0.3)
-        
-        # Add statistics text
-        stats_text = f"n = {stats['n_points']}\nr = {stats['correlation']:.3f}\nR² = {stats['correlation']**2:.3f}"
-        ax1.text(0.02, 0.98, stats_text, transform=ax1.transAxes, 
-                verticalalignment='top', bbox=dict(boxstyle='round', facecolor='lightcoral', alpha=0.9))
-        
-        plt.tight_layout()
-        st.pyplot(fig)
-        plt.close(fig)
     
     def _create_heat_map_scatter_plot(self, df: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], 
                                     width: int, height: int, heat_column: str = None, flow_name_column: str = None) -> None:
@@ -817,55 +639,90 @@ class InteractiveTableDisplay:
         # Create figure
         fig, ax = plt.subplots(figsize=(width, height))
         
-        # Get valid data - ensure consistent filtering
-        # First, get the base data for the two main columns
-        base_data = df[[col1, col2]].dropna()
+        # Get valid data
+        columns_needed = [col1, col2]
+        if heat_column:
+            columns_needed.append(heat_column)
+        if flow_name_column:
+            columns_needed.append(flow_name_column)
         
-        if len(base_data) == 0:
+        valid_data = df[columns_needed].dropna()
+        
+        if len(valid_data) == 0:
             st.error("❌ No valid data points found for the selected columns.")
             return
         
-        # Then add additional columns if they exist, but only for rows that are already valid
-        valid_data = base_data.copy()
-        if heat_column and heat_column in df.columns:
-            valid_data[heat_column] = df.loc[base_data.index, heat_column]
-        if flow_name_column and flow_name_column in df.columns:
-            valid_data[flow_name_column] = df.loc[base_data.index, flow_name_column]
-        
         # Create scatter plot
         if heat_column and heat_column in valid_data.columns:
-            # Color by heat column - ensure all arrays have the same length
-            x_data = valid_data[col1].values
-            y_data = valid_data[col2].values
-            c_data = valid_data[heat_column].values
+            # Extract heat data from the already filtered valid_data
+            heat_data = valid_data[heat_column]
             
-            # Additional safety check for array sizes
-            if len(x_data) != len(y_data) or len(x_data) != len(c_data):
-                st.error(f"❌ Data size mismatch: x={len(x_data)}, y={len(y_data)}, c={len(c_data)}")
+            # Ensure heat_data is a Series
+            if isinstance(heat_data, pd.DataFrame):
+                heat_data = heat_data.iloc[:, 0]  # Take first column if it's a DataFrame
+            
+            # Double-check that all arrays have the same length
+            x_data = valid_data[col1]
+            y_data = valid_data[col2]
+            
+            if len(heat_data) != len(x_data) or len(heat_data) != len(y_data):
+                st.error(f"❌ Data length mismatch: x={len(x_data)}, y={len(y_data)}, heat={len(heat_data)}")
                 return
             
-            scatter = ax.scatter(
-                x_data, 
-                y_data, 
-                c=c_data, 
-                cmap='viridis', 
-                alpha=0.7, 
-                s=80,
-                edgecolors='black',
-                linewidth=0.5
-            )
-            
-            # Add colorbar
-            cbar = plt.colorbar(scatter, ax=ax)
-            cbar.set_label(f'{heat_column} (Heat Value)', fontsize=10, fontweight='bold')
+            # Check if heat column is numeric or categorical
+            if pd.api.types.is_numeric_dtype(heat_data):
+                # Numeric coloring
+                scatter = ax.scatter(
+                    x_data, 
+                    y_data, 
+                    c=heat_data, 
+                    cmap='viridis', 
+                    alpha=0.7, 
+                    s=80,
+                    edgecolors='black',
+                    linewidth=0.5
+                )
+                
+                # Add colorbar
+                cbar = plt.colorbar(scatter, ax=ax)
+                cbar.set_label(f'{heat_column} (Heat Value)', fontsize=10, fontweight='bold')
+            else:
+                # Categorical coloring
+                unique_categories = heat_data.unique()
+                n_categories = len(unique_categories)
+                
+                # Use a colormap that works well for categorical data
+                if n_categories <= 10:
+                    colors = plt.cm.Set3(np.linspace(0, 1, n_categories))
+                else:
+                    colors = plt.cm.tab20(np.linspace(0, 1, n_categories))
+                
+                # Create color mapping
+                color_map = dict(zip(unique_categories, colors))
+                
+                # Plot each category separately
+                for category in unique_categories:
+                    mask = heat_data == category
+                    category_data = valid_data[mask]
+                    
+                    ax.scatter(
+                        x_data[mask], 
+                        y_data[mask], 
+                        c=[color_map[category]], 
+                        label=str(category),
+                        alpha=0.7, 
+                        s=80,
+                        edgecolors='black',
+                        linewidth=0.5
+                    )
+                
+                # Add legend for categories
+                ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
         else:
-            # Default color - ensure consistent data handling
-            x_data = valid_data[col1].values
-            y_data = valid_data[col2].values
-            
+            # Default color
             scatter = ax.scatter(
-                x_data, 
-                y_data, 
+                valid_data[col1], 
+                valid_data[col2], 
                 alpha=0.7, 
                 s=80,
                 color='steelblue',
@@ -929,33 +786,15 @@ class InteractiveTableDisplay:
         st.pyplot(fig)
         plt.close(fig)
     
-    def _add_plot_options(self, df: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], width: int, height: int) -> None:
+    def _add_plot_options(self, df: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], width: int, height: int, heat_column: str = None, flow_name_column: str = None) -> None:
         """Add plot options and export functionality."""
         st.markdown("**Plot Options:**")
         col1_opt, col2_opt = st.columns(2)
         
         with col1_opt:
             if st.button("📥 Download Current Plot as PNG"):
-                # Get the current plot type
-                plot_type = st.session_state.get("plot_type_selector", "Enhanced Seaborn")
-                
-                # Create appropriate plot for download
-                valid_data = df[[col1, col2]].dropna()
-                
-                if plot_type == "Enhanced Seaborn":
-                    fig = self._create_downloadable_seaborn_plot(valid_data, col1, col2, stats, width, height)
-                elif plot_type == "Joint Plot":
-                    fig = self._create_downloadable_joint_plot(valid_data, col1, col2, stats, width, height)
-                elif plot_type == "Regression Plot":
-                    fig = self._create_downloadable_regression_plot(valid_data, col1, col2, stats, width, height)
-                elif plot_type == "Heat Map Scatter":
-                    heat_col = st.session_state.get("heat_column_selector", "None")
-                    flow_col = st.session_state.get("flow_name_selector", "None")
-                    heat_col = None if heat_col == "None" else heat_col
-                    flow_col = None if flow_col == "None" else flow_col
-                    fig = self._create_downloadable_heat_map_scatter_plot(df, col1, col2, stats, width, height, heat_col, flow_col)
-                else:
-                    fig = self._create_downloadable_matplotlib_plot(valid_data, col1, col2, stats, width, height)
+                # Create heat map scatter plot for download
+                fig = self._create_downloadable_heat_map_scatter_plot(df, col1, col2, stats, width, height, heat_column, flow_name_column)
                 
                 # Save to buffer
                 import io
@@ -964,10 +803,16 @@ class InteractiveTableDisplay:
                 buf.seek(0)
                 
                 # Create download button
+                plot_name = f"heat_map_scatter_{col1}_vs_{col2}"
+                if heat_column:
+                    plot_name += f"_colored_by_{heat_column}"
+                if flow_name_column:
+                    plot_name += f"_labeled_by_{flow_name_column}"
+                
                 st.download_button(
                     label="Click to download",
                     data=buf.getvalue(),
-                    file_name=f"scatter_plot_{col1}_vs_{col2}_{plot_type.lower().replace(' ', '_')}.png",
+                    file_name=f"{plot_name}.png",
                     mime="image/png"
                 )
                 plt.close(fig)
@@ -983,116 +828,6 @@ class InteractiveTableDisplay:
                 mime="text/csv"
             )
     
-    def _create_downloadable_seaborn_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], width: int, height: int) -> plt.Figure:
-        """Create downloadable seaborn plot."""
-        sns.set_theme(style="whitegrid", palette="husl")
-        fig, ax = plt.subplots(figsize=(width, height))
-        
-        sns.regplot(
-            data=valid_data, 
-            x=col1, 
-            y=col2,
-            scatter_kws={'alpha': 0.6, 's': 60, 'color': 'steelblue'},
-            line_kws={'color': 'red', 'linewidth': 2, 'linestyle': '--'},
-            ax=ax,
-            ci=95
-        )
-        
-        ax.set_xlabel(col1, fontsize=12, fontweight='bold')
-        ax.set_ylabel(col2, fontsize=12, fontweight='bold')
-        ax.set_title(f"Enhanced Scatter Plot: {col1} vs {col2}", fontsize=14, fontweight='bold')
-        
-        stats_text = f"n = {stats['n_points']}\nr = {stats['correlation']:.3f}\nCov = {stats['covariance']:.3f}"
-        ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, 
-               verticalalignment='top', bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.9))
-        
-        return fig
-    
-    def _create_downloadable_joint_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], width: int, height: int) -> plt.Figure:
-        """Create downloadable joint plot."""
-        sns.set_theme(style="whitegrid", palette="husl")
-        g = sns.jointplot(
-            data=valid_data,
-            x=col1,
-            y=col2,
-            kind="scatter",
-            height=height,
-            joint_kws={'alpha': 0.6, 's': 50},
-            marginal_kws={'bins': 20, 'kde': True}
-        )
-        
-        if len(valid_data) > 1:
-            sns.regplot(
-                data=valid_data, 
-                x=col1, 
-                y=col2,
-                scatter=False,
-                line_kws={'color': 'red', 'linewidth': 2, 'linestyle': '--'},
-                ax=g.ax_joint
-            )
-        
-        g.fig.suptitle(f"Joint Plot: {col1} vs {col2}", y=1.02, fontsize=14, fontweight='bold')
-        g.ax_joint.set_xlabel(col1, fontsize=12, fontweight='bold')
-        g.ax_joint.set_ylabel(col2, fontsize=12, fontweight='bold')
-        
-        return g.fig
-    
-    def _create_downloadable_regression_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], width: int, height: int) -> plt.Figure:
-        """Create downloadable regression plot."""
-        sns.set_theme(style="whitegrid", palette="husl")
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(width, height), height_ratios=[3, 1])
-        
-        sns.regplot(
-            data=valid_data, 
-            x=col1, 
-            y=col2,
-            scatter_kws={'alpha': 0.6, 's': 60, 'color': 'steelblue'},
-            line_kws={'color': 'red', 'linewidth': 2},
-            ax=ax1,
-            ci=95
-        )
-        
-        ax1.set_xlabel(col1, fontsize=12, fontweight='bold')
-        ax1.set_ylabel(col2, fontsize=12, fontweight='bold')
-        ax1.set_title(f"Regression Plot: {col1} vs {col2}", fontsize=14, fontweight='bold')
-        
-        if len(valid_data) > 1:
-            z = np.polyfit(valid_data[col1], valid_data[col2], 1)
-            p = np.poly1d(z)
-            predicted = p(valid_data[col1])
-            residuals = valid_data[col2] - predicted
-            
-            ax2.scatter(valid_data[col1], residuals, alpha=0.6, s=50, color='orange')
-            ax2.axhline(y=0, color='red', linestyle='--', alpha=0.8)
-            ax2.set_xlabel(col1, fontsize=12, fontweight='bold')
-            ax2.set_ylabel('Residuals', fontsize=12, fontweight='bold')
-            ax2.set_title('Residual Plot', fontsize=12, fontweight='bold')
-            ax2.grid(True, alpha=0.3)
-        
-        return fig
-    
-    def _create_downloadable_matplotlib_plot(self, valid_data: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], width: int, height: int) -> plt.Figure:
-        """Create downloadable matplotlib plot."""
-        fig, ax = plt.subplots(figsize=(width, height))
-        
-        ax.scatter(valid_data[col1], valid_data[col2], alpha=0.6, s=50, color='steelblue')
-        
-        if len(valid_data) > 1:
-            z = np.polyfit(valid_data[col1], valid_data[col2], 1)
-            p = np.poly1d(z)
-            ax.plot(valid_data[col1], p(valid_data[col1]), "r--", alpha=0.8, linewidth=2, label='Trend Line')
-        
-        ax.set_xlabel(col1, fontsize=12, fontweight='bold')
-        ax.set_ylabel(col2, fontsize=12, fontweight='bold')
-        ax.set_title(f"Classic Scatter Plot: {col1} vs {col2}", fontsize=14, fontweight='bold')
-        ax.grid(True, alpha=0.3)
-        ax.legend()
-        
-        stats_text = f"n = {stats['n_points']}\nr = {stats['correlation']:.3f}\nCov = {stats['covariance']:.3f}"
-        ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, 
-               verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
-        
-        return fig
     
     def _create_downloadable_heat_map_scatter_plot(self, df: pd.DataFrame, col1: str, col2: str, stats: Dict[str, float], 
                                                  width: int, height: int, heat_column: str = None, flow_name_column: str = None) -> plt.Figure:
@@ -1103,53 +838,89 @@ class InteractiveTableDisplay:
         # Create figure
         fig, ax = plt.subplots(figsize=(width, height))
         
-        # Get valid data - ensure consistent filtering
-        # First, get the base data for the two main columns
-        base_data = df[[col1, col2]].dropna()
+        # Get valid data
+        columns_needed = [col1, col2]
+        if heat_column:
+            columns_needed.append(heat_column)
+        if flow_name_column:
+            columns_needed.append(flow_name_column)
         
-        if len(base_data) == 0:
+        valid_data = df[columns_needed].dropna()
+        
+        if len(valid_data) == 0:
             return fig
-        
-        # Then add additional columns if they exist, but only for rows that are already valid
-        valid_data = base_data.copy()
-        if heat_column and heat_column in df.columns:
-            valid_data[heat_column] = df.loc[base_data.index, heat_column]
-        if flow_name_column and flow_name_column in df.columns:
-            valid_data[flow_name_column] = df.loc[base_data.index, flow_name_column]
         
         # Create scatter plot
         if heat_column and heat_column in valid_data.columns:
-            # Color by heat column - ensure all arrays have the same length
-            x_data = valid_data[col1].values
-            y_data = valid_data[col2].values
-            c_data = valid_data[heat_column].values
+            # Extract heat data from the already filtered valid_data
+            heat_data = valid_data[heat_column]
             
-            # Additional safety check for array sizes
-            if len(x_data) != len(y_data) or len(x_data) != len(c_data):
+            # Ensure heat_data is a Series
+            if isinstance(heat_data, pd.DataFrame):
+                heat_data = heat_data.iloc[:, 0]  # Take first column if it's a DataFrame
+            
+            # Double-check that all arrays have the same length
+            x_data = valid_data[col1]
+            y_data = valid_data[col2]
+            
+            if len(heat_data) != len(x_data) or len(heat_data) != len(y_data):
+                # Return empty figure if there's a mismatch
                 return fig
             
-            scatter = ax.scatter(
-                x_data, 
-                y_data, 
-                c=c_data, 
-                cmap='viridis', 
-                alpha=0.7, 
-                s=80,
-                edgecolors='black',
-                linewidth=0.5
-            )
-            
-            # Add colorbar
-            cbar = plt.colorbar(scatter, ax=ax)
-            cbar.set_label(f'{heat_column} (Heat Value)', fontsize=10, fontweight='bold')
+            # Check if heat column is numeric or categorical
+            if pd.api.types.is_numeric_dtype(heat_data):
+                # Numeric coloring
+                scatter = ax.scatter(
+                    x_data, 
+                    y_data, 
+                    c=heat_data, 
+                    cmap='viridis', 
+                    alpha=0.7, 
+                    s=80,
+                    edgecolors='black',
+                    linewidth=0.5
+                )
+                
+                # Add colorbar
+                cbar = plt.colorbar(scatter, ax=ax)
+                cbar.set_label(f'{heat_column} (Heat Value)', fontsize=10, fontweight='bold')
+            else:
+                # Categorical coloring
+                unique_categories = heat_data.unique()
+                n_categories = len(unique_categories)
+                
+                # Use a colormap that works well for categorical data
+                if n_categories <= 10:
+                    colors = plt.cm.Set3(np.linspace(0, 1, n_categories))
+                else:
+                    colors = plt.cm.tab20(np.linspace(0, 1, n_categories))
+                
+                # Create color mapping
+                color_map = dict(zip(unique_categories, colors))
+                
+                # Plot each category separately
+                for category in unique_categories:
+                    mask = heat_data == category
+                    category_data = valid_data[mask]
+                    
+                    ax.scatter(
+                        x_data[mask], 
+                        y_data[mask], 
+                        c=[color_map[category]], 
+                        label=str(category),
+                        alpha=0.7, 
+                        s=80,
+                        edgecolors='black',
+                        linewidth=0.5
+                    )
+                
+                # Add legend for categories
+                ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8)
         else:
-            # Default color - ensure consistent data handling
-            x_data = valid_data[col1].values
-            y_data = valid_data[col2].values
-            
+            # Default color
             scatter = ax.scatter(
-                x_data, 
-                y_data, 
+                valid_data[col1], 
+                valid_data[col2], 
                 alpha=0.7, 
                 s=80,
                 color='steelblue',
