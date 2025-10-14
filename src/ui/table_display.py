@@ -407,8 +407,8 @@ class InteractiveTableDisplay:
         # Get numeric columns
         numeric_cols = self._get_numeric_columns(df)
         
-        if len(numeric_cols) < 2:
-            st.warning("⚠️ Need at least 2 numeric columns for scatter plotting.")
+        if len(numeric_cols) < 1:
+            st.warning("⚠️ Need at least 1 numeric column for plotting.")
             st.info(f"Available numeric columns: {numeric_cols}")
             return
         
@@ -416,7 +416,7 @@ class InteractiveTableDisplay:
         st.markdown("**📊 Plot Type Selection**")
         plot_type = st.radio(
             "Select Plot Type",
-            ["2D Scatter Plot", "3D Scatter Plot"],
+            ["1D Histogram", "2D Scatter Plot", "3D Scatter Plot"],
             key="plot_type_selector",
             horizontal=True
         )
@@ -424,7 +424,46 @@ class InteractiveTableDisplay:
         st.markdown("---")
         
         # Column selection based on plot type
-        if plot_type == "2D Scatter Plot":
+        if plot_type == "1D Histogram":
+            # Single column selection for histogram
+            selected_col1 = st.selectbox(
+                "Select Column for Histogram",
+                numeric_cols,
+                key="histogram_col"
+            )
+            
+            selected_col2 = None
+            selected_col3 = None
+            
+            # Validate and create histogram
+            if selected_col1:
+                is_valid, error_msg = self._validate_column_for_histogram(df, selected_col1)
+                
+                if not is_valid:
+                    st.error(f"❌ {error_msg}")
+                    return
+                
+                # Calculate histogram statistics
+                hist_stats = self._calculate_histogram_statistics(df, selected_col1)
+                
+                if not hist_stats:
+                    st.error("❌ Unable to calculate histogram statistics.")
+                    return
+                
+                # Display statistics
+                self._display_histogram_statistics(hist_stats, selected_col1)
+                
+                # Create and display histogram
+                with st.spinner(f"Generating histogram for {len(df)} data points..."):
+                    self._create_histogram(df, selected_col1, hist_stats)
+        
+        elif plot_type == "2D Scatter Plot":
+            # Check for sufficient columns
+            if len(numeric_cols) < 2:
+                st.warning("⚠️ Need at least 2 numeric columns for 2D scatter plotting.")
+                st.info(f"Available numeric columns: {numeric_cols}")
+                return
+            
             col1, col2 = st.columns(2)
             
             with col1:
@@ -443,6 +482,7 @@ class InteractiveTableDisplay:
             
             selected_col3 = None
         else:  # 3D Scatter Plot
+            # Check for sufficient columns
             if len(numeric_cols) < 3:
                 st.warning("⚠️ Need at least 3 numeric columns for 3D scatter plotting.")
                 st.info(f"Available numeric columns: {numeric_cols}")
@@ -547,6 +587,22 @@ class InteractiveTableDisplay:
         
         return percentiles
     
+    def _validate_column_for_histogram(self, df: pd.DataFrame, col: str) -> Tuple[bool, str]:
+        """Validate that selected column is suitable for histogram plotting."""
+        if col not in df.columns:
+            return False, "Selected column does not exist in the DataFrame."
+        
+        # Check if column is numeric
+        if not pd.api.types.is_numeric_dtype(df[col]):
+            return False, "Column must be numeric for histogram plotting."
+        
+        # Check for sufficient data
+        valid_data = df[col].dropna()
+        if len(valid_data) < 1:
+            return False, "Insufficient data for plotting. Need at least 1 valid data point."
+        
+        return True, "Column is valid for histogram plotting."
+    
     def _validate_columns_for_plotting(self, df: pd.DataFrame, col1: str, col2: str) -> Tuple[bool, str]:
         """Validate that selected columns are suitable for scatter plotting."""
         if col1 not in df.columns or col2 not in df.columns:
@@ -599,6 +655,31 @@ class InteractiveTableDisplay:
         
         return stats
     
+    def _calculate_histogram_statistics(self, df: pd.DataFrame, col: str) -> Dict[str, Any]:
+        """Calculate statistics for histogram."""
+        valid_data = df[col].dropna()
+        
+        if len(valid_data) < 1:
+            return {}
+        
+        # Calculate comprehensive statistics
+        stats = {
+            'n_points': len(valid_data),
+            'mean': valid_data.mean(),
+            'median': valid_data.median(),
+            'std': valid_data.std(),
+            'min': valid_data.min(),
+            'max': valid_data.max(),
+            'q25': valid_data.quantile(0.25),
+            'q75': valid_data.quantile(0.75),
+            'iqr': valid_data.quantile(0.75) - valid_data.quantile(0.25),
+            'skewness': valid_data.skew(),
+            'kurtosis': valid_data.kurtosis(),
+            'range': valid_data.max() - valid_data.min(),
+        }
+        
+        return stats
+    
     def _display_statistics_summary(self, stats: Dict[str, float]) -> None:
         """Display summary statistics in metrics."""
         st.subheader("📈 Statistical Summary")
@@ -616,6 +697,66 @@ class InteractiveTableDisplay:
         
         with col4:
             st.metric("Spearman's ρ", f"{stats['spearman_r']:.3f}")
+    
+    def _display_histogram_statistics(self, stats: Dict[str, Any], col: str) -> None:
+        """Display statistics for histogram."""
+        st.subheader("📈 Distribution Statistics")
+        
+        # Top row metrics
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Data Points", f"{stats['n_points']:,}")
+        
+        with col2:
+            st.metric("Mean", f"{stats['mean']:.3f}")
+        
+        with col3:
+            st.metric("Median", f"{stats['median']:.3f}")
+        
+        with col4:
+            st.metric("Std Dev", f"{stats['std']:.3f}")
+        
+        # Second row metrics
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric("Min", f"{stats['min']:.3f}")
+        
+        with col2:
+            st.metric("Max", f"{stats['max']:.3f}")
+        
+        with col3:
+            st.metric("Range", f"{stats['range']:.3f}")
+        
+        with col4:
+            st.metric("IQR", f"{stats['iqr']:.3f}")
+        
+        # Distribution shape metrics
+        st.markdown("**📊 Distribution Shape**")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            skew_value = stats['skewness']
+            if abs(skew_value) < 0.5:
+                skew_desc = "Approximately Symmetric"
+            elif skew_value > 0:
+                skew_desc = "Right-skewed (Positive)"
+            else:
+                skew_desc = "Left-skewed (Negative)"
+            st.write(f"**Skewness**: {skew_value:.3f} - {skew_desc}")
+        
+        with col2:
+            kurt_value = stats['kurtosis']
+            if abs(kurt_value) < 0.5:
+                kurt_desc = "Normal-like"
+            elif kurt_value > 0:
+                kurt_desc = "Heavy-tailed (Leptokurtic)"
+            else:
+                kurt_desc = "Light-tailed (Platykurtic)"
+            st.write(f"**Kurtosis**: {kurt_value:.3f} - {kurt_desc}")
+        
+        st.markdown("---")
     
     def _display_detailed_statistics(self, stats: Dict[str, float], col1: str, col2: str) -> None:
         """Display detailed statistics for both columns."""
@@ -1098,6 +1239,248 @@ class InteractiveTableDisplay:
                verticalalignment='top', bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.9))
         
         return fig
+    
+    def _create_histogram(self, df: pd.DataFrame, col: str, stats: Dict[str, Any]) -> None:
+        """Create and display histogram with customization options."""
+        st.subheader("📊 Histogram")
+        
+        # Get valid data
+        valid_data = df[col].dropna()
+        
+        if len(valid_data) == 0:
+            st.error("❌ No valid data points found.")
+            return
+        
+        # Histogram customization options
+        st.markdown("**🎨 Histogram Options**")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            # Bin selection
+            bin_method = st.selectbox(
+                "Bin Method",
+                ["Auto (Sturges)", "Fixed Count", "Fixed Width", "sqrt", "doane", "scott", "rice"],
+                key="hist_bin_method"
+            )
+        
+        with col2:
+            # Color selection
+            hist_color = st.color_picker("Histogram Color", "#1f77b4", key="hist_color")
+        
+        with col3:
+            # Overlay options
+            show_kde = st.checkbox("Show KDE (Density)", value=True, key="show_kde")
+            show_normal = st.checkbox("Show Normal Curve", value=False, key="show_normal")
+        
+        # Additional customization
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            show_stats_lines = st.checkbox("Show Mean/Median Lines", value=True, key="show_stats_lines")
+        
+        with col2:
+            show_quartiles = st.checkbox("Show Quartile Lines", value=False, key="show_quartiles")
+        
+        # Determine bins
+        if bin_method == "Fixed Count":
+            num_bins = st.slider("Number of Bins", min_value=5, max_value=100, value=30, key="num_bins")
+            bins = num_bins
+        elif bin_method == "Fixed Width":
+            bin_width = st.number_input(
+                "Bin Width", 
+                min_value=0.001, 
+                max_value=float(stats['range']), 
+                value=float(stats['range'] / 30),
+                format="%.6g",
+                key="bin_width"
+            )
+            bins = np.arange(stats['min'], stats['max'] + bin_width, bin_width)
+        elif bin_method == "Auto (Sturges)":
+            bins = 'sturges'
+        else:
+            bins = bin_method.lower()
+        
+        # Plot size controls
+        size_col1, size_col2 = st.columns(2)
+        
+        with size_col1:
+            plot_width = st.slider("Plot Width (inches)", min_value=6, max_value=16, value=10, key="hist_width")
+        
+        with size_col2:
+            plot_height = st.slider("Plot Height (inches)", min_value=4, max_value=12, value=6, key="hist_height")
+        
+        st.info(f"📐 Current plot size: {plot_width} × {plot_height} inches")
+        
+        # Create the histogram plot
+        self._render_histogram_plot(
+            valid_data, col, stats, bins, hist_color, 
+            show_kde, show_normal, show_stats_lines, show_quartiles,
+            plot_width, plot_height
+        )
+        
+        # Download options
+        self._add_histogram_download_options(
+            valid_data, col, stats, bins, hist_color,
+            show_kde, show_normal, show_stats_lines, show_quartiles,
+            plot_width, plot_height
+        )
+    
+    def _render_histogram_plot(self, data: pd.Series, col: str, stats: Dict[str, Any],
+                               bins: Any, color: str, show_kde: bool, show_normal: bool,
+                               show_stats_lines: bool, show_quartiles: bool,
+                               width: int, height: int) -> None:
+        """Render the histogram plot with all options."""
+        sns.set_theme(style="whitegrid")
+        
+        fig, ax = plt.subplots(figsize=(width, height))
+        
+        # Plot histogram
+        n, bin_edges, patches = ax.hist(
+            data, 
+            bins=bins, 
+            color=color, 
+            alpha=0.7,
+            edgecolor='black',
+            linewidth=1.2,
+            density=show_kde or show_normal  # Normalize if showing density curves
+        )
+        
+        # Update patch colors
+        for patch in patches:
+            patch.set_facecolor(color)
+        
+        # Add KDE curve
+        if show_kde:
+            from scipy import stats as scipy_stats
+            kde = scipy_stats.gaussian_kde(data)
+            x_range = np.linspace(data.min(), data.max(), 200)
+            ax.plot(x_range, kde(x_range), 'r-', linewidth=2, label='KDE', alpha=0.8)
+        
+        # Add normal distribution curve
+        if show_normal:
+            from scipy import stats as scipy_stats
+            x_range = np.linspace(data.min(), data.max(), 200)
+            normal_curve = scipy_stats.norm.pdf(x_range, stats['mean'], stats['std'])
+            ax.plot(x_range, normal_curve, 'g--', linewidth=2, label='Normal Dist.', alpha=0.8)
+        
+        # Add statistical lines
+        if show_stats_lines:
+            ax.axvline(stats['mean'], color='red', linestyle='--', linewidth=2, label=f"Mean: {stats['mean']:.3f}", alpha=0.8)
+            ax.axvline(stats['median'], color='orange', linestyle='--', linewidth=2, label=f"Median: {stats['median']:.3f}", alpha=0.8)
+        
+        # Add quartile lines
+        if show_quartiles:
+            ax.axvline(stats['q25'], color='purple', linestyle=':', linewidth=1.5, label=f"Q1: {stats['q25']:.3f}", alpha=0.7)
+            ax.axvline(stats['q75'], color='purple', linestyle=':', linewidth=1.5, label=f"Q3: {stats['q75']:.3f}", alpha=0.7)
+        
+        # Customize plot
+        ax.set_xlabel(col, fontsize=12, fontweight='bold')
+        ax.set_ylabel('Frequency' if not (show_kde or show_normal) else 'Density', fontsize=12, fontweight='bold')
+        ax.set_title(f'Histogram: {col}', fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        
+        if show_kde or show_normal or show_stats_lines or show_quartiles:
+            ax.legend(loc='best', fontsize=10)
+        
+        # Add statistics text box
+        stats_text = f"n = {stats['n_points']:,}\n"
+        stats_text += f"μ = {stats['mean']:.3f}\n"
+        stats_text += f"σ = {stats['std']:.3f}\n"
+        stats_text += f"Range = {stats['range']:.3f}"
+        
+        ax.text(0.98, 0.98, stats_text, transform=ax.transAxes,
+               verticalalignment='top', horizontalalignment='right',
+               bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.9),
+               fontsize=10)
+        
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
+    
+    def _add_histogram_download_options(self, data: pd.Series, col: str, stats: Dict[str, Any],
+                                        bins: Any, color: str, show_kde: bool, show_normal: bool,
+                                        show_stats_lines: bool, show_quartiles: bool,
+                                        width: int, height: int) -> None:
+        """Add download options for histogram."""
+        st.markdown("**📥 Download Options**")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("📊 Download Histogram as PNG"):
+                # Create the plot
+                sns.set_theme(style="whitegrid")
+                fig, ax = plt.subplots(figsize=(width, height))
+                
+                n, bin_edges, patches = ax.hist(
+                    data, bins=bins, color=color, alpha=0.7,
+                    edgecolor='black', linewidth=1.2,
+                    density=show_kde or show_normal
+                )
+                
+                for patch in patches:
+                    patch.set_facecolor(color)
+                
+                if show_kde:
+                    from scipy import stats as scipy_stats
+                    kde = scipy_stats.gaussian_kde(data)
+                    x_range = np.linspace(data.min(), data.max(), 200)
+                    ax.plot(x_range, kde(x_range), 'r-', linewidth=2, label='KDE', alpha=0.8)
+                
+                if show_normal:
+                    from scipy import stats as scipy_stats
+                    x_range = np.linspace(data.min(), data.max(), 200)
+                    normal_curve = scipy_stats.norm.pdf(x_range, stats['mean'], stats['std'])
+                    ax.plot(x_range, normal_curve, 'g--', linewidth=2, label='Normal Dist.', alpha=0.8)
+                
+                if show_stats_lines:
+                    ax.axvline(stats['mean'], color='red', linestyle='--', linewidth=2, label=f"Mean: {stats['mean']:.3f}", alpha=0.8)
+                    ax.axvline(stats['median'], color='orange', linestyle='--', linewidth=2, label=f"Median: {stats['median']:.3f}", alpha=0.8)
+                
+                if show_quartiles:
+                    ax.axvline(stats['q25'], color='purple', linestyle=':', linewidth=1.5, label=f"Q1: {stats['q25']:.3f}", alpha=0.7)
+                    ax.axvline(stats['q75'], color='purple', linestyle=':', linewidth=1.5, label=f"Q3: {stats['q75']:.3f}", alpha=0.7)
+                
+                ax.set_xlabel(col, fontsize=12, fontweight='bold')
+                ax.set_ylabel('Frequency' if not (show_kde or show_normal) else 'Density', fontsize=12, fontweight='bold')
+                ax.set_title(f'Histogram: {col}', fontsize=14, fontweight='bold')
+                ax.grid(True, alpha=0.3)
+                
+                if show_kde or show_normal or show_stats_lines or show_quartiles:
+                    ax.legend(loc='best', fontsize=10)
+                
+                stats_text = f"n = {stats['n_points']:,}\nμ = {stats['mean']:.3f}\nσ = {stats['std']:.3f}\nRange = {stats['range']:.3f}"
+                ax.text(0.98, 0.98, stats_text, transform=ax.transAxes,
+                       verticalalignment='top', horizontalalignment='right',
+                       bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.9),
+                       fontsize=10)
+                
+                plt.tight_layout()
+                
+                # Save to buffer
+                import io
+                buf = io.BytesIO()
+                fig.savefig(buf, format='png', dpi=300, bbox_inches='tight')
+                buf.seek(0)
+                
+                st.download_button(
+                    label="Click to download PNG",
+                    data=buf.getvalue(),
+                    file_name=f"histogram_{col}.png",
+                    mime="image/png"
+                )
+                plt.close(fig)
+        
+        with col2:
+            # Export statistics to CSV
+            stats_df = pd.DataFrame([stats])
+            csv = stats_df.to_csv(index=False)
+            st.download_button(
+                label="📈 Download Statistics CSV",
+                data=csv,
+                file_name=f"histogram_statistics_{col}.csv",
+                mime="text/csv"
+            )
     
     def _display_correlation_interpretation(self, stats: Dict[str, float], col1: str, col2: str) -> None:
         """Display correlation interpretation and insights."""
