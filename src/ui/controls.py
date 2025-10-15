@@ -448,7 +448,7 @@ class TableControls:
                     'values': selected_values
                 }
             else:
-                return None
+                return None 
         
         elif filter_op in ["greater than", "less than"]:
             # For numeric comparisons on discrete numeric columns
