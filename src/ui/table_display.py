@@ -31,7 +31,7 @@ class InteractiveTableDisplay:
             column_metadata: Metadata about DataFrame columns
             processed_data: Processed data from DataFrameProcessor
         """
-        st.markdown("### Data Table")
+        # st.markdown("### Data Table")
         
         # Display table information
         self._render_table_info(df, column_metadata)

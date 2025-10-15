@@ -17,10 +17,15 @@ class TableControls:
         if 'column_filters' not in st.session_state:
             st.session_state.column_filters = {}
         
+        # Initialize session state for column visibility
+        if 'visible_columns' not in st.session_state:
+            st.session_state.visible_columns = {}
+        
         self.current_page = 1
         self.items_per_page = AppConfig.MAX_ROWS_PER_PAGE
         self.search_term = ""
         self.column_filters = st.session_state.column_filters  # Reference to session state
+        self.visible_columns = st.session_state.visible_columns  # Reference to session state
         self.sort_column = None
         self.sort_ascending = True
     
@@ -35,7 +40,8 @@ class TableControls:
         Returns:
             Dict containing control state and filtered data
         """
-        st.markdown("### Table Controls")
+        
+        
         
         # Search and filter controls
         filtered_df = self._render_search_and_filters(df, column_metadata)
@@ -49,6 +55,13 @@ class TableControls:
         # No pagination - show all data
         final_df = sorted_df
         
+        # Column visibility controls
+        visible_columns_list = self._render_column_visibility_controls(df, column_metadata)
+
+        # Apply column visibility filter
+        if visible_columns_list:
+            final_df = final_df[visible_columns_list]
+        
         # Display settings
         self._render_display_settings()
         
@@ -60,8 +73,82 @@ class TableControls:
             'pareto_filtered_data': pareto_filtered_df,
             'sorted_data': sorted_df,
             'final_data': final_df,
+            'visible_columns': visible_columns_list,
             'controls_state': self._get_controls_state()
         }
+    
+    def _render_column_visibility_controls(self, df: pd.DataFrame, column_metadata: Dict[str, Any]) -> List[str]:
+        """
+        Render column visibility controls to show/hide columns.
+        
+        Args:
+            df: DataFrame to control
+            column_metadata: Metadata about DataFrame columns
+            
+        Returns:
+            List of visible column names
+        """
+        
+        # Initialize visibility for new columns (default: visible)
+        for col_name in df.columns:
+            if col_name not in self.visible_columns:
+                st.session_state.visible_columns[col_name] = True
+        
+        # Create expandable section for column visibility controls
+        with st.expander("Show/Hide Columns", expanded=False):
+            # Add buttons for quick actions
+            col1, col2, col3 = st.columns([1, 1, 2])
+            
+            with col1:
+                if st.button("✅ Show All", key="show_all_columns", help="Make all columns visible"):
+                    for col_name in df.columns:
+                        st.session_state.visible_columns[col_name] = True
+                    st.rerun()
+            
+            with col2:
+                if st.button("❌ Hide All", key="hide_all_columns", help="Hide all columns"):
+                    for col_name in df.columns:
+                        st.session_state.visible_columns[col_name] = False
+                    st.rerun()
+            
+            st.markdown("---")
+            
+            # Display checkboxes for each column in a grid layout
+            num_columns = len(df.columns)
+            cols_per_row = 3
+            
+            for i in range(0, num_columns, cols_per_row):
+                cols = st.columns(cols_per_row)
+                
+                for j in range(cols_per_row):
+                    idx = i + j
+                    if idx < num_columns:
+                        col_name = df.columns[idx]
+                        
+                        with cols[j]:
+                            # Use a unique key for each checkbox
+                            is_visible = st.checkbox(
+                                f"{col_name}",
+                                value=st.session_state.visible_columns.get(col_name, True),
+                                key=f"col_vis_{col_name}",
+                                help=f"Toggle visibility of column '{col_name}'"
+                            )
+                            
+                            # Update session state if changed
+                            if is_visible != st.session_state.visible_columns.get(col_name, True):
+                                st.session_state.visible_columns[col_name] = is_visible
+        
+        # Return list of visible columns
+        visible_columns = [col for col in df.columns if st.session_state.visible_columns.get(col, True)]
+        
+        # Show summary
+        visible_count = len(visible_columns)
+        total_count = len(df.columns)
+        
+        if visible_count < total_count:
+            st.info(f"📊 Showing {visible_count} of {total_count} columns ({total_count - visible_count} hidden)")
+        
+        return visible_columns
     
     def _render_search_and_filters(self, df: pd.DataFrame, column_metadata: Dict[str, Any]) -> pd.DataFrame:
         """
@@ -74,25 +161,7 @@ class TableControls:
         Returns:
             Filtered DataFrame
         """
-        col1, col2 = st.columns([2, 1])
         
-        with col1:
-            # Global search
-            self.search_term = st.text_input(
-                "Search across all columns",
-                value=self.search_term,
-                placeholder="Enter search term...",
-                help="Search for text in any column"
-            )
-        
-        with col2:
-            # Items per page
-            self.items_per_page = st.selectbox(
-                "Items per page",
-                options=[10, 25, 50, 100],
-                index=[10, 25, 50, 100].index(self.items_per_page),
-                help="Number of rows to display per page"
-            )
         
         # Column-specific filters
         col1, col2 = st.columns([3, 1])
@@ -680,30 +749,29 @@ class TableControls:
         if len(df) == 0:
             return df
         
-        st.markdown("#### Sorting")
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            # Column selection for sorting
-            sortable_columns = [col for col in df.columns if df[col].dtype in ['object', 'int64', 'float64']]
-            if sortable_columns:
-                self.sort_column = st.selectbox(
-                    "Sort by column",
-                    options=sortable_columns,
-                    index=0 if not self.sort_column else sortable_columns.index(self.sort_column),
-                    help="Select column to sort by"
+        with st.expander("Sorting", expanded=False):
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                # Column selection for sorting
+                sortable_columns = [col for col in df.columns if df[col].dtype in ['object', 'int64', 'float64']]
+                if sortable_columns:
+                    self.sort_column = st.selectbox(
+                        "Sort by column",
+                        options=sortable_columns,
+                        index=0 if not self.sort_column else sortable_columns.index(self.sort_column),
+                        help="Select column to sort by"
+                    )
+            
+            with col2:
+                # Sort order
+                self.sort_ascending = st.checkbox(
+                    "Sort ascending",
+                    value=self.sort_ascending,
+                    help="Check for ascending order, uncheck for descending"
                 )
         
-        with col2:
-            # Sort order
-            self.sort_ascending = st.checkbox(
-                "Sort ascending",
-                value=self.sort_ascending,
-                help="Check for ascending order, uncheck for descending"
-            )
-        
-        # Apply sorting
+        # Apply sorting (outside expander)
         if self.sort_column and self.sort_column in df.columns:
             try:
                 df = df.sort_values(by=self.sort_column, ascending=self.sort_ascending)
@@ -714,54 +782,53 @@ class TableControls:
     
     def _render_display_settings(self) -> None:
         """Render display settings controls."""
-        st.markdown("#### Display Settings")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            # Show/hide controls
-            show_controls = st.checkbox(
-                "Show control panel",
-                value=True,
-                help="Show or hide the control panel"
-            )
-        
-        with col2:
-            # Table height
-            table_height = st.slider(
-                "Table height",
-                min_value=300,
-                max_value=1000,
-                value=AppConfig.DEFAULT_TABLE_HEIGHT,
-                step=50,
-                help="Height of the table in pixels"
-            )
-        
-        with col3:
-            # Text truncation settings
-            st.markdown("**Text Display:**")
+        with st.expander("Display Settings", expanded=False):
+            col1, col2, col3 = st.columns(3)
             
-            # Character limit for text truncation
-            char_limit = st.number_input(
-                "Max characters per cell",
-                min_value=10,
-                max_value=1000,
-                value=50,
-                step=10,
-                key="text_char_limit",
-                help="Maximum number of characters to display in each cell"
-            )
+            with col1:
+                # Show/hide controls
+                show_controls = st.checkbox(
+                    "Show control panel",
+                    value=True,
+                    help="Show or hide the control panel"
+                )
             
-            # CSS width limit
-            css_width = st.number_input(
-                "Max cell width (px)",
-                min_value=100,
-                max_value=800,
-                value=200,
-                step=50,
-                key="text_css_width",
-                help="Maximum width of table cells in pixels"
-            )
+            with col2:
+                # Table height
+                table_height = st.slider(
+                    "Table height",
+                    min_value=300,
+                    max_value=1000,
+                    value=AppConfig.DEFAULT_TABLE_HEIGHT,
+                    step=50,
+                    help="Height of the table in pixels"
+                )
+            
+            with col3:
+                # Text truncation settings
+                st.markdown("**Text Display:**")
+                
+                # Character limit for text truncation
+                char_limit = st.number_input(
+                    "Max characters per cell",
+                    min_value=10,
+                    max_value=1000,
+                    value=50,
+                    step=10,
+                    key="text_char_limit",
+                    help="Maximum number of characters to display in each cell"
+                )
+                
+                # CSS width limit
+                css_width = st.number_input(
+                    "Max cell width (px)",
+                    min_value=100,
+                    max_value=800,
+                    value=200,
+                    step=50,
+                    key="text_css_width",
+                    help="Maximum width of table cells in pixels"
+                )
     
     def _prepare_dataframe_for_export(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -821,51 +888,50 @@ class TableControls:
         Args:
             df: DataFrame to export
         """
-        st.markdown("#### Export Options")
-        
-        # Prepare clean DataFrame for export
-        export_df = self._prepare_dataframe_for_export(df)
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            # Export as CSV
-            csv_data = export_df.to_csv(index=False)
-            st.download_button(
-                label="Download CSV",
-                data=csv_data,
-                file_name="dataframe_export.csv",
-                mime="text/csv"
-            )
-        
-        with col2:
-            # Export as Excel
-            try:
-                import io
-                buffer = io.BytesIO()
-                
-                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    export_df.to_excel(writer, index=False, sheet_name='Sheet1')
-                buffer.seek(0)
-                
+        with st.expander("Export Options", expanded=False):
+            # Prepare clean DataFrame for export
+            export_df = self._prepare_dataframe_for_export(df)
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                # Export as CSV
+                csv_data = export_df.to_csv(index=False)
                 st.download_button(
-                    label="Download Excel",
-                    data=buffer.getvalue(),
-                    file_name="dataframe_export.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    label="Download CSV",
+                    data=csv_data,
+                    file_name="dataframe_export.csv",
+                    mime="text/csv"
                 )
-            except ImportError:
-                st.info("Excel export requires openpyxl package")
-        
-        with col3:
-            # Export as JSON
-            json_data = export_df.to_json(index=False, orient='records')
-            st.download_button(
-                label="Download JSON",
-                data=json_data,
-                file_name="dataframe_export.json",
-                mime="application/json"
-            )
+            
+            with col2:
+                # Export as Excel
+                try:
+                    import io
+                    buffer = io.BytesIO()
+                    
+                    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                        export_df.to_excel(writer, index=False, sheet_name='Sheet1')
+                    buffer.seek(0)
+                    
+                    st.download_button(
+                        label="Download Excel",
+                        data=buffer.getvalue(),
+                        file_name="dataframe_export.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                except ImportError:
+                    st.info("Excel export requires openpyxl package")
+            
+            with col3:
+                # Export as JSON
+                json_data = export_df.to_json(index=False, orient='records')
+                st.download_button(
+                    label="Download JSON",
+                    data=json_data,
+                    file_name="dataframe_export.json",
+                    mime="application/json"
+                )
     
     def _get_controls_state(self) -> Dict[str, Any]:
         """Get current state of all controls."""
@@ -874,6 +940,7 @@ class TableControls:
             'items_per_page': self.items_per_page,
             'search_term': self.search_term,
             'column_filters': self.column_filters.copy(),
+            'visible_columns': self.visible_columns.copy(),
             'sort_column': self.sort_column,
             'sort_ascending': self.sort_ascending
         }
@@ -885,6 +952,9 @@ class TableControls:
         self.search_term = ""
         # Explicitly clear session state filters
         st.session_state.column_filters.clear()
+        # Reset column visibility to all visible
+        for col_name in st.session_state.visible_columns:
+            st.session_state.visible_columns[col_name] = True
         self.sort_column = None
         self.sort_ascending = True
     

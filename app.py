@@ -65,11 +65,10 @@ def main():
     if df is not None and st.session_state.dataframe_loaded:
         try:
             # Display basic DataFrame info
-            st.header("📊 Data Overview")
-            display_dataframe_info(df)
+            # display_dataframe_info(df)
             
             # Process DataFrame
-            st.header("⚙️ Processing Data")
+            # st.header("⚙️ Processing Data")
             with st.spinner("Processing DataFrame..."):
                 processor = DataFrameProcessor()
                 result = processor.process_dataframe(df)
@@ -78,21 +77,21 @@ def main():
                 st.session_state.processed_data = result['processed_data']
                 st.session_state.column_metadata = result['column_metadata']
                 
-                st.success(f"Successfully processed DataFrame with {result['original_shape'][0]} rows and {result['original_shape'][1]} columns")
+                # st.success(f"Successfully processed DataFrame with {result['original_shape'][0]} rows and {result['original_shape'][1]} columns")
                 
-                # Display processing results
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("Total Images", result['column_metadata'].get('total_images', 0))
-                with col2:
-                    image_columns = [col for col, meta in result['column_metadata'].items() 
-                                   if meta.get('contains_images', False)]
-                    st.metric("Image Columns", len(image_columns))
-                with col3:
-                    st.metric("Cache Usage", f"{processor.get_cache_info()['cache_usage_percent']:.1f}%")
+                # # Display processing results
+                # col1, col2, col3 = st.columns(3)
+                # with col1:
+                #     st.metric("Total Images", result['column_metadata'].get('total_images', 0))
+                # with col2:
+                #     image_columns = [col for col, meta in result['column_metadata'].items() 
+                #                    if meta.get('contains_images', False)]
+                #     st.metric("Image Columns", len(image_columns))
+                # with col3:
+                #     st.metric("Cache Usage", f"{processor.get_cache_info()['cache_usage_percent']:.1f}%")
             
             # Display interactive table
-            st.header("📋 Interactive Table")
+            # st.header("📋 Interactive Table")
             
             # Initialize UI components
             table_display = InteractiveTableDisplay()
