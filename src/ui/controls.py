@@ -13,10 +13,14 @@ class TableControls:
     
     def __init__(self):
         """Initialize the TableControls."""
+        # Initialize session state for persistent filters
+        if 'column_filters' not in st.session_state:
+            st.session_state.column_filters = {}
+        
         self.current_page = 1
         self.items_per_page = AppConfig.MAX_ROWS_PER_PAGE
         self.search_term = ""
-        self.column_filters = {}
+        self.column_filters = st.session_state.column_filters  # Reference to session state
         self.sort_column = None
         self.sort_ascending = True
     
@@ -121,7 +125,7 @@ class TableControls:
     
     def _render_column_filters(self, df: pd.DataFrame, column_metadata: Dict[str, Any]) -> None:
         """
-        Render filters for individual columns.
+        Render filters for individual columns using "add rules" mode.
         
         Args:
             df: DataFrame to filter
@@ -129,40 +133,167 @@ class TableControls:
         """
         st.markdown("#### Column Filters")
         
-        # Create filters for each column
+        # Display active filter rules first
+        if self.column_filters:
+            st.markdown("**🔧 Active Filter Rules:**")
+            self._render_active_filter_rules(df)
+            st.markdown("---")
+        
+        # Get filterable columns (exclude image columns)
+        filterable_columns = []
         for col_name in df.columns:
             col_meta = column_metadata.get(col_name, {})
-            
-            if col_meta.get('contains_images', False):
-                # Skip image columns for text filtering
-                continue
-            
-            # Get unique values for the column
-            unique_values = df[col_name].dropna().unique()
-            is_numeric = pd.api.types.is_numeric_dtype(df[col_name])
-            
-            # Determine if this is a discrete or continuous column
-            is_discrete = len(unique_values) <= 20
-            is_continuous_numeric = is_numeric and not is_discrete
-            
-            # Show filters for discrete columns or continuous numeric columns
-            if is_discrete or is_continuous_numeric:
-                st.markdown(f"**{col_name}**")
-                
-                if is_continuous_numeric:
-                    # Continuous numeric column - only show range-based filters
-                    self._render_continuous_numeric_filter(df, col_name)
-                else:
-                    # Discrete column - show all filter types
-                    self._render_discrete_column_filter(df, col_name, unique_values, is_numeric)
+            if not col_meta.get('contains_images', False):
+                filterable_columns.append(col_name)
+        
+        if not filterable_columns:
+            st.info("No filterable columns available.")
+            return
+        
+        st.markdown("**➕ Add New Filter Rule:**")
+        
+        # Column selector
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            selected_column = st.selectbox(
+                "Select Column to Filter",
+                options=["-- Select a column --"] + filterable_columns,
+                key="filter_column_selector",
+                help="Choose which column to add a filter rule for"
+            )
+        
+        with col2:
+            # Show column info
+            if selected_column != "-- Select a column --":
+                unique_count = df[selected_column].nunique()
+                st.caption(f"📊 {unique_count} unique values")
+        
+        # If a column is selected, show filter controls
+        if selected_column != "-- Select a column --":
+            self._render_add_filter_rule_interface(df, selected_column, column_metadata)
     
-    def _render_continuous_numeric_filter(self, df: pd.DataFrame, col_name: str) -> None:
+    def _render_active_filter_rules(self, df: pd.DataFrame) -> None:
         """
-        Render filter controls for continuous numeric columns.
+        Display active filter rules with delete buttons.
+        
+        Args:
+            df: DataFrame being filtered
+        """
+        rules_to_delete = []
+        
+        for col_name, filter_config in self.column_filters.items():
+            col1, col2, col3 = st.columns([2, 4, 1])
+            
+            with col1:
+                st.write(f"**{col_name}**")
+            
+            with col2:
+                # Display rule description
+                rule_desc = self._get_filter_rule_description(filter_config)
+                st.write(rule_desc)
+            
+            with col3:
+                if st.button("🗑️", key=f"delete_rule_{col_name}", help=f"Delete filter for {col_name}"):
+                    rules_to_delete.append(col_name)
+        
+        # Delete rules after iteration
+        for col_name in rules_to_delete:
+            # Explicitly delete from session state
+            if col_name in st.session_state.column_filters:
+                del st.session_state.column_filters[col_name]
+            st.rerun()
+    
+    def _get_filter_rule_description(self, filter_config: Dict[str, Any]) -> str:
+        """
+        Generate human-readable description of filter rule.
+        
+        Args:
+            filter_config: Filter configuration
+            
+        Returns:
+            Description string
+        """
+        operation = filter_config.get('operation', 'equals')
+        
+        if operation in ["equals", "contains", "starts with", "ends with"]:
+            values = filter_config.get('values', [])
+            if values:
+                value_str = ", ".join(map(str, values[:3]))
+                if len(values) > 3:
+                    value_str += f" ... (+{len(values)-3} more)"
+                return f"{operation}: {value_str}"
+        
+        elif operation in ["greater than", "less than"]:
+            threshold = filter_config.get('threshold')
+            if threshold is not None:
+                return f"{operation} {threshold:.4g}"
+        
+        elif operation == "between":
+            lower = filter_config.get('lower_bound')
+            upper = filter_config.get('upper_bound')
+            if lower is not None and upper is not None:
+                return f"between [{lower:.4g}, {upper:.4g}]"
+        
+        return "Unknown rule"
+    
+    def _render_add_filter_rule_interface(self, df: pd.DataFrame, col_name: str, 
+                                         column_metadata: Dict[str, Any]) -> None:
+        """
+        Render interface to configure and add a new filter rule.
+        
+        Args:
+            df: DataFrame to filter
+            col_name: Column to add filter for
+            column_metadata: Column metadata
+        """
+        # Initialize session state for temporary rule configuration
+        if 'temp_filter_config' not in st.session_state:
+            st.session_state.temp_filter_config = {}
+        
+        # Get column properties
+        unique_values = df[col_name].dropna().unique()
+        is_numeric = pd.api.types.is_numeric_dtype(df[col_name])
+        is_discrete = len(unique_values) <= 20
+        is_continuous_numeric = is_numeric and not is_discrete
+        
+        st.markdown(f"**Configure filter for: `{col_name}`**")
+        
+        if is_continuous_numeric:
+            # Continuous numeric column
+            rule_config = self._render_continuous_filter_builder(df, col_name)
+        else:
+            # Discrete column
+            rule_config = self._render_discrete_filter_builder(df, col_name, unique_values, is_numeric)
+        
+        # Add Rule button
+        col1, col2, col3 = st.columns([1, 1, 2])
+        
+        with col1:
+            if st.button("➕ Add Rule", key="add_filter_rule_btn", type="primary"):
+                if rule_config:
+                    # Explicitly update session state
+                    st.session_state.column_filters[col_name] = rule_config
+                    # Success message will flash briefly before rerun
+                    st.success(f"✅ Filter rule added for {col_name}")
+                    st.rerun()
+                else:
+                    st.warning("⚠️ Please configure the filter rule first")
+        
+        with col2:
+            if st.button("Cancel", key="cancel_filter_rule_btn"):
+                st.rerun()
+    
+    def _render_continuous_filter_builder(self, df: pd.DataFrame, col_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Render filter builder for continuous numeric columns and return configuration.
         
         Args:
             df: DataFrame containing the column
-            col_name: Name of the numeric column to filter
+            col_name: Name of the numeric column
+            
+        Returns:
+            Filter configuration dict or None
         """
         min_val = float(df[col_name].min())
         max_val = float(df[col_name].max())
@@ -170,183 +301,148 @@ class TableControls:
         # Display value range hint
         st.caption(f"📊 Data Range: [{min_val:.4g}, {max_val:.4g}]")
         
-        col1, col2, col3 = st.columns([1, 2, 1])
+        # Filter operation selection
+        filter_op = st.selectbox(
+            "Operation",
+            options=["greater than", "less than", "between"],
+            key=f"filter_op_builder_{col_name}",
+            help=f"Choose filtering operation for {col_name}"
+        )
         
-        with col1:
-            # Filter operation selection
-            filter_op = st.selectbox(
-                "Operation",
-                options=["greater than", "less than", "between"],
-                key=f"filter_op_{col_name}",
-                help=f"Choose filtering operation for {col_name}"
-            )
-        
-        with col2:
-            if filter_op == "between":
-                # Range filter
-                col2a, col2b = st.columns(2)
-                
-                with col2a:
-                    lower_bound = st.number_input(
-                        "Min value",
-                        value=min_val,
-                        format="%.6g",
-                        key=f"filter_lower_{col_name}",
-                        help=f"Lower bound (data range: [{min_val:.4g}, {max_val:.4g}])"
-                    )
-                
-                with col2b:
-                    upper_bound = st.number_input(
-                        "Max value",
-                        value=max_val,
-                        format="%.6g",
-                        key=f"filter_upper_{col_name}",
-                        help=f"Upper bound (data range: [{min_val:.4g}, {max_val:.4g}])"
-                    )
-                
-                # Validation - just show warnings, still apply filter
-                if lower_bound > upper_bound:
-                    st.warning(f"⚠️ Min value ({lower_bound:.4g}) should be ≤ Max value ({upper_bound:.4g})")
-                
-                if lower_bound < min_val or upper_bound > max_val:
-                    st.info(f"ℹ️ Filter range extends beyond data range [{min_val:.4g}, {max_val:.4g}]")
-                
-                # Always apply the filter
-                self.column_filters[col_name] = {
-                    'operation': filter_op,
-                    'lower_bound': lower_bound,
-                    'upper_bound': upper_bound
-                }
+        if filter_op == "between":
+            # Range filter
+            col2a, col2b = st.columns(2)
             
-            elif filter_op == "greater than":
-                threshold = st.number_input(
-                    "Threshold value",
+            with col2a:
+                lower_bound = st.number_input(
+                    "Min value",
                     value=min_val,
                     format="%.6g",
-                    key=f"filter_threshold_{col_name}",
-                    help=f"Values greater than this (data range: [{min_val:.4g}, {max_val:.4g}])"
+                    key=f"filter_lower_builder_{col_name}",
+                    help=f"Lower bound (data range: [{min_val:.4g}, {max_val:.4g}])"
                 )
-                
-                # Show info if outside data range
-                if threshold < min_val or threshold > max_val:
-                    st.info(f"ℹ️ Threshold is outside data range [{min_val:.4g}, {max_val:.4g}]")
-                
-                # Always apply the filter
-                self.column_filters[col_name] = {
-                    'operation': filter_op,
-                    'threshold': threshold
-                }
             
-            else:  # less than
-                threshold = st.number_input(
-                    "Threshold value",
+            with col2b:
+                upper_bound = st.number_input(
+                    "Max value",
                     value=max_val,
                     format="%.6g",
-                    key=f"filter_threshold_{col_name}",
-                    help=f"Values less than this (data range: [{min_val:.4g}, {max_val:.4g}])"
+                    key=f"filter_upper_builder_{col_name}",
+                    help=f"Upper bound (data range: [{min_val:.4g}, {max_val:.4g}])"
                 )
-                
-                # Show info if outside data range
-                if threshold < min_val or threshold > max_val:
-                    st.info(f"ℹ️ Threshold is outside data range [{min_val:.4g}, {max_val:.4g}]")
-                
-                # Always apply the filter
-                self.column_filters[col_name] = {
-                    'operation': filter_op,
-                    'threshold': threshold
-                }
+            
+            # Validation warnings
+            if lower_bound > upper_bound:
+                st.warning(f"⚠️ Min value ({lower_bound:.4g}) should be ≤ Max value ({upper_bound:.4g})")
+            
+            if lower_bound < min_val or upper_bound > max_val:
+                st.info(f"ℹ️ Filter range extends beyond data range [{min_val:.4g}, {max_val:.4g}]")
+            
+            return {
+                'operation': filter_op,
+                'lower_bound': lower_bound,
+                'upper_bound': upper_bound
+            }
         
-        with col3:
-            if st.button("Clear", key=f"clear_filter_{col_name}", help=f"Clear filter for {col_name}"):
-                if col_name in self.column_filters:
-                    del self.column_filters[col_name]
-                st.rerun()
+        elif filter_op == "greater than":
+            threshold = st.number_input(
+                "Threshold value",
+                value=min_val,
+                format="%.6g",
+                key=f"filter_threshold_builder_{col_name}",
+                help=f"Values greater than this (data range: [{min_val:.4g}, {max_val:.4g}])"
+            )
+            
+            if threshold < min_val or threshold > max_val:
+                st.info(f"ℹ️ Threshold is outside data range [{min_val:.4g}, {max_val:.4g}]")
+            
+            return {
+                'operation': filter_op,
+                'threshold': threshold
+            }
+        
+        else:  # less than
+            threshold = st.number_input(
+                "Threshold value",
+                value=max_val,
+                format="%.6g",
+                key=f"filter_threshold_builder_{col_name}",
+                help=f"Values less than this (data range: [{min_val:.4g}, {max_val:.4g}])"
+            )
+            
+            if threshold < min_val or threshold > max_val:
+                st.info(f"ℹ️ Threshold is outside data range [{min_val:.4g}, {max_val:.4g}]")
+            
+            return {
+                'operation': filter_op,
+                'threshold': threshold
+            }
     
-    def _render_discrete_column_filter(self, df: pd.DataFrame, col_name: str, 
-                                      unique_values: np.ndarray, is_numeric: bool) -> None:
+    def _render_discrete_filter_builder(self, df: pd.DataFrame, col_name: str,
+                                       unique_values: np.ndarray, is_numeric: bool) -> Optional[Dict[str, Any]]:
         """
-        Render filter controls for discrete columns (≤20 unique values).
+        Render filter builder for discrete columns and return configuration.
         
         Args:
             df: DataFrame containing the column
-            col_name: Name of the column to filter
-            unique_values: Array of unique values in the column
-            is_numeric: Whether the column is numeric type
+            col_name: Name of the column
+            unique_values: Array of unique values
+            is_numeric: Whether the column is numeric
+            
+        Returns:
+            Filter configuration dict or None
         """
-        col1, col2 = st.columns([2, 1])
+        # Filter operation options depend on whether column is numeric
+        if is_numeric:
+            filter_options = ["equals", "greater than", "less than"]
+        else:
+            filter_options = ["equals", "contains", "starts with", "ends with"]
         
-        with col1:
-            # Filter operation options depend on whether column is numeric
-            if is_numeric:
-                filter_options = ["equals", "greater than", "less than"]
-            else:
-                filter_options = ["equals", "contains", "starts with", "ends with"]
-            
-            filter_op = st.selectbox(
-                "Operation",
-                options=filter_options,
-                key=f"filter_op_{col_name}",
-                help=f"Choose how to filter {col_name}"
+        filter_op = st.selectbox(
+            "Operation",
+            options=filter_options,
+            key=f"filter_op_builder_{col_name}",
+            help=f"Choose how to filter {col_name}"
+        )
+        
+        if filter_op in ["equals", "contains", "starts with", "ends with"]:
+            selected_values = st.multiselect(
+                "Values",
+                options=unique_values,
+                key=f"filter_values_builder_{col_name}",
+                help=f"Select values to filter {col_name}"
             )
-        
-        with col2:
-            # Filter values
-            if filter_op in ["equals", "contains", "starts with", "ends with"]:
-                col2a, col2b = st.columns([3, 1])
-                
-                with col2a:
-                    selected_values = st.multiselect(
-                        "Values",
-                        options=unique_values,
-                        default=self.column_filters.get(col_name, {}).get('values', []),
-                        key=f"filter_values_{col_name}",
-                        help=f"Select values to filter {col_name}"
-                    )
-                
-                with col2b:
-                    if st.button("Clear", key=f"clear_filter_{col_name}", help=f"Clear filter for {col_name}"):
-                        if col_name in self.column_filters:
-                            del self.column_filters[col_name]
-                        st.rerun()
-                
-                if selected_values:
-                    self.column_filters[col_name] = {
-                        'operation': filter_op,
-                        'values': selected_values
-                    }
-                elif col_name in self.column_filters:
-                    del self.column_filters[col_name]
             
-            elif filter_op in ["greater than", "less than"]:
-                # For numeric comparisons on discrete numeric columns
-                min_val = float(df[col_name].min())
-                max_val = float(df[col_name].max())
-                
-                col2a, col2b = st.columns([3, 1])
-                
-                with col2a:
-                    threshold = st.number_input(
-                        f"{filter_op.title()} value",
-                        value=min_val if filter_op == "greater than" else max_val,
-                        format="%.6g",
-                        key=f"filter_threshold_{col_name}",
-                        help=f"Data range: [{min_val:.4g}, {max_val:.4g}]"
-                    )
-                
-                with col2b:
-                    if st.button("Clear", key=f"clear_filter_{col_name}", help=f"Clear filter for {col_name}"):
-                        if col_name in self.column_filters:
-                            del self.column_filters[col_name]
-                        st.rerun()
-                
-                # Show info if outside data range
-                if threshold < min_val or threshold > max_val:
-                    st.info(f"ℹ️ Threshold is outside data range [{min_val:.4g}, {max_val:.4g}]")
-                
-                self.column_filters[col_name] = {
+            if selected_values:
+                return {
                     'operation': filter_op,
-                    'threshold': threshold
+                    'values': selected_values
                 }
+            else:
+                return None
+        
+        elif filter_op in ["greater than", "less than"]:
+            # For numeric comparisons on discrete numeric columns
+            min_val = float(df[col_name].min())
+            max_val = float(df[col_name].max())
+            
+            threshold = st.number_input(
+                f"{filter_op.title()} value",
+                value=min_val if filter_op == "greater than" else max_val,
+                format="%.6g",
+                key=f"filter_threshold_builder_{col_name}",
+                help=f"Data range: [{min_val:.4g}, {max_val:.4g}]"
+            )
+            
+            if threshold < min_val or threshold > max_val:
+                st.info(f"ℹ️ Threshold is outside data range [{min_val:.4g}, {max_val:.4g}]")
+            
+            return {
+                'operation': filter_op,
+                'threshold': threshold
+            }
+        
+        return None
     
     def _apply_search_filter(self, df: pd.DataFrame, search_term: str) -> pd.DataFrame:
         """
@@ -706,7 +802,8 @@ class TableControls:
         self.current_page = 1
         self.items_per_page = AppConfig.MAX_ROWS_PER_PAGE
         self.search_term = ""
-        self.column_filters.clear()
+        # Explicitly clear session state filters
+        st.session_state.column_filters.clear()
         self.sort_column = None
         self.sort_ascending = True
     

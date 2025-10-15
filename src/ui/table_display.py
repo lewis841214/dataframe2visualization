@@ -79,14 +79,11 @@ class InteractiveTableDisplay:
             column_metadata: Column metadata
             processed_data: Processed data
         """
-        # Create a custom HTML table for better image handling
-        html_table = self._generate_html_table(df, column_metadata, processed_data)
+        # Use Streamlit's native dataframe rendering (safer and no iframe security issues)
+        self._render_streamlit_dataframe(df, column_metadata, processed_data)
         
-        # Display the HTML table
-        st.components.v1.html(html_table, height=AppConfig.DEFAULT_TABLE_HEIGHT, scrolling=True)
-        
-        # Alternative: Use Streamlit's dataframe with custom rendering
-        # self._render_streamlit_dataframe(df, column_metadata, processed_data)
+        # Note: Custom HTML rendering removed due to iframe sandbox security warnings
+        # The native st.dataframe provides sufficient functionality without security risks
     
     def _generate_html_table(self, df: pd.DataFrame, column_metadata: Dict[str, Any],
                            processed_data: Dict[str, Any]) -> str:
