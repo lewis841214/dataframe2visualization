@@ -300,27 +300,17 @@ class TableControls:
             Filtered DataFrame
         """
         
+        # Quick null filtering
+        filtered_df = self._render_quick_null_filter(df, column_metadata)
         
-        # Column-specific filters
-        col1, col2 = st.columns([3, 1])
-        
-        with col1:
-            show_filters = st.checkbox("Show column filters", value=False)
-        
-        with col2:
-            if st.button("Reset All Filters", help="Clear all search and filter settings"):
-                self.reset_controls()
-                st.rerun()
-        
-        if show_filters:
-            self._render_column_filters(df, column_metadata)
+        # Column-specific filters (advanced)
+        self._render_column_filters_expander(filtered_df, column_metadata)
         
         # # Show active filters summary
         # if self.search_term or self.column_filters:
         #     self._show_active_filters_summary()
         
         # Apply search filter
-        filtered_df = df.copy()
         if self.search_term:
             filtered_df = self._apply_search_filter(filtered_df, self.search_term)
         
@@ -330,6 +320,124 @@ class TableControls:
         
         return filtered_df
     
+    def _render_quick_null_filter(self, df: pd.DataFrame, column_metadata: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Render quick null/empty value filters for all columns.
+        
+        Args:
+            df: DataFrame to filter
+            column_metadata: Metadata about DataFrame columns
+            
+        Returns:
+            Filtered DataFrame
+        """
+        # Initialize session state for quick null filters
+        if 'quick_null_filters' not in st.session_state:
+            st.session_state.quick_null_filters = {}
+        
+        with st.expander("Quick Null/Empty Filter", expanded=False):
+            st.markdown("Filter columns by null/empty values. Select filtering mode for each column:")
+            
+            # Get filterable columns (exclude image columns)
+            filterable_columns = []
+            for col_name in df.columns:
+                col_meta = column_metadata.get(col_name, {})
+                if not col_meta.get('contains_images', False):
+                    filterable_columns.append(col_name)
+            
+            if not filterable_columns:
+                st.info("No filterable columns available.")
+                return df
+            
+            # Initialize filters for new columns
+            for col_name in filterable_columns:
+                if col_name not in st.session_state.quick_null_filters:
+                    st.session_state.quick_null_filters[col_name] = "Any"
+            
+            # Add reset button
+            col_reset1, col_reset2 = st.columns([1, 3])
+            with col_reset1:
+                if st.button("Reset Filters", key="reset_quick_null_filters", help="Reset all quick filters to 'Any'"):
+                    for col_name in filterable_columns:
+                        st.session_state.quick_null_filters[col_name] = "Any"
+                    st.rerun()
+            
+            st.markdown("---")
+            
+            # Display selectboxes in grid layout
+            cols_per_row = 3
+            filter_options = ["Any", "Has Value", "Is Empty"]
+            
+            for i in range(0, len(filterable_columns), cols_per_row):
+                cols = st.columns(cols_per_row)
+                
+                for j in range(cols_per_row):
+                    idx = i + j
+                    if idx < len(filterable_columns):
+                        col_name = filterable_columns[idx]
+                        
+                        with cols[j]:
+                            # Show null count for context
+                            null_count = df[col_name].isna().sum()
+                            total_count = len(df)
+                            
+                            # Create selectbox
+                            selected_filter = st.selectbox(
+                                f"{col_name}",
+                                options=filter_options,
+                                index=filter_options.index(st.session_state.quick_null_filters.get(col_name, "Any")),
+                                key=f"quick_null_{col_name}",
+                                help=f"Null/empty: {null_count}/{total_count} rows"
+                            )
+                            
+                            # Update session state
+                            st.session_state.quick_null_filters[col_name] = selected_filter
+            
+            # Apply filters
+            filtered_df = df.copy()
+            active_filters = []
+            
+            for col_name in filterable_columns:
+                filter_mode = st.session_state.quick_null_filters.get(col_name, "Any")
+                
+                if filter_mode == "Has Value":
+                    filtered_df = filtered_df[filtered_df[col_name].notna()]
+                    active_filters.append(f"{col_name}: Has Value")
+                elif filter_mode == "Is Empty":
+                    filtered_df = filtered_df[filtered_df[col_name].isna()]
+                    active_filters.append(f"{col_name}: Is Empty")
+            
+            # Show active filters summary
+            if active_filters:
+                st.markdown("---")
+                st.markdown(f"**Active Filters ({len(active_filters)}):** {', '.join(active_filters[:5])}" +
+                           (f" ... (+{len(active_filters)-5} more)" if len(active_filters) > 5 else ""))
+                st.info(f"📊 Showing {len(filtered_df)} of {len(df)} rows")
+        
+        return filtered_df
+    
+    def _render_column_filters_expander(self, df: pd.DataFrame, column_metadata: Dict[str, Any]) -> None:
+        """
+        Render column filters in an expander.
+        
+        Args:
+            df: DataFrame to filter
+            column_metadata: Column metadata
+        """
+        with st.expander("Advanced Column Filters", expanded=False):
+            # Reset button at the top
+            col1, col2, col3 = st.columns([1, 1, 2])
+            
+            with col1:
+                if st.button("Reset All Filters", key="reset_all_filters_btn", help="Clear all search and filter settings"):
+                    self.reset_controls()
+                    st.rerun()
+            
+            st.markdown("---")
+            
+            # Render the column filters
+            self._render_column_filters(df, column_metadata)
+    
     def _render_column_filters(self, df: pd.DataFrame, column_metadata: Dict[str, Any]) -> None:
         """
         Render filters for individual columns using "add rules" mode.
@@ -338,8 +446,6 @@ class TableControls:
             df: DataFrame to filter
             column_metadata: Column metadata
         """
-        st.markdown("#### Column Filters")
-        
         # Get filterable columns (exclude image columns)
         filterable_columns = []
         for col_name in df.columns:
@@ -1090,6 +1196,10 @@ class TableControls:
         self.search_term = ""
         # Explicitly clear session state filters
         st.session_state.column_filters.clear()
+        # Reset quick null filters to "Any"
+        if 'quick_null_filters' in st.session_state:
+            for col_name in st.session_state.quick_null_filters:
+                st.session_state.quick_null_filters[col_name] = "Any"
         # Reset column visibility to all visible
         for col_name in st.session_state.visible_columns:
             st.session_state.visible_columns[col_name] = True
