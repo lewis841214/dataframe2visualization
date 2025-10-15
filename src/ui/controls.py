@@ -254,7 +254,7 @@ class TableControls:
                         with cols[j]:
                             is_selected = st.checkbox(
                                 col_name,
-                                value=True,
+                                value=False,
                                 key=f"ref_compare_{col_name}",
                                 help=f"Compute difference for {col_name}"
                             )
