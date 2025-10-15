@@ -41,10 +41,11 @@ class TableControls:
             Dict containing control state and filtered data
         """
         
-        
+        # Reference row comparison (modifies dataframe structure)
+        df_with_diff = self._render_reference_row_comparison(df, column_metadata)
         
         # Search and filter controls
-        filtered_df = self._render_search_and_filters(df, column_metadata)
+        filtered_df = self._render_search_and_filters(df_with_diff, column_metadata)
         
         # Pareto frontier filter controls (apply to filtered data)
         pareto_filtered_df = self._render_pareto_frontier_controls(filtered_df)
@@ -55,8 +56,8 @@ class TableControls:
         # No pagination - show all data
         final_df = sorted_df
         
-        # Column visibility controls
-        visible_columns_list = self._render_column_visibility_controls(df, column_metadata)
+        # Column visibility controls (use df_with_diff to include new columns)
+        visible_columns_list = self._render_column_visibility_controls(final_df, column_metadata)
 
         # Apply column visibility filter
         if visible_columns_list:
@@ -145,10 +146,147 @@ class TableControls:
         visible_count = len(visible_columns)
         total_count = len(df.columns)
         
-        if visible_count < total_count:
-            st.info(f"📊 Showing {visible_count} of {total_count} columns ({total_count - visible_count} hidden)")
+        # if visible_count < total_count:
+        #     st.info(f"📊 Showing {visible_count} of {total_count} columns ({total_count - visible_count} hidden)")
         
         return visible_columns
+    
+    def _render_reference_row_comparison(self, df: pd.DataFrame, column_metadata: Dict[str, Any]) -> pd.DataFrame:
+        """
+        Render reference row comparison controls and compute differences.
+        
+        Args:
+            df: DataFrame to process
+            column_metadata: Metadata about DataFrame columns
+            
+        Returns:
+            DataFrame with difference columns added (if enabled)
+        """
+        with st.expander("Reference Row Comparison", expanded=False):
+            # Enable/disable feature
+            enable_comparison = st.checkbox(
+                "Enable reference row comparison",
+                value=False,
+                key="enable_ref_comparison",
+                help="Compare all rows against a selected reference row"
+            )
+            
+            if not enable_comparison:
+                st.info("Enable this feature to compute differences between rows and a reference row.")
+                return df
+            
+            # Step 1: Select key column to identify reference row
+            st.markdown("**Step 1: Select Reference Row**")
+            
+            # Get all columns (exclude image columns)
+            selectable_columns = []
+            for col_name in df.columns:
+                col_meta = column_metadata.get(col_name, {})
+                if not col_meta.get('contains_images', False):
+                    selectable_columns.append(col_name)
+            
+            if not selectable_columns:
+                st.warning("No columns available for selection.")
+                return df
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                key_column = st.selectbox(
+                    "Key Column",
+                    options=selectable_columns,
+                    key="ref_key_column",
+                    help="Column to use for identifying the reference row"
+                )
+            
+            with col2:
+                # Get unique values from key column
+                unique_values = df[key_column].dropna().unique()
+                if len(unique_values) == 0:
+                    st.warning(f"No values available in column '{key_column}'")
+                    return df
+                
+                reference_value = st.selectbox(
+                    "Reference Value",
+                    options=unique_values,
+                    key="ref_value",
+                    help="Value that identifies the reference row"
+                )
+            
+            # Find reference row
+            ref_rows = df[df[key_column] == reference_value]
+            if len(ref_rows) == 0:
+                st.error(f"No row found with {key_column} = {reference_value}")
+                return df
+            
+            ref_row = ref_rows.iloc[0]
+            st.success(f"✓ Reference row selected: {key_column} = {reference_value}")
+            
+            # Step 2: Select columns to compare
+            st.markdown("**Step 2: Select Columns to Compare**")
+            
+            # Get numeric columns for comparison
+            numeric_columns = []
+            for col_name in df.columns:
+                col_meta = column_metadata.get(col_name, {})
+                if not col_meta.get('contains_images', False):
+                    if pd.api.types.is_numeric_dtype(df[col_name]):
+                        numeric_columns.append(col_name)
+            
+            if not numeric_columns:
+                st.warning("No numeric columns available for comparison.")
+                return df
+            
+            # Display checkboxes for numeric columns
+            st.markdown("Select columns to compute differences:")
+            
+            cols_per_row = 4
+            selected_cols = []
+            
+            for i in range(0, len(numeric_columns), cols_per_row):
+                cols = st.columns(cols_per_row)
+                
+                for j in range(cols_per_row):
+                    idx = i + j
+                    if idx < len(numeric_columns):
+                        col_name = numeric_columns[idx]
+                        
+                        with cols[j]:
+                            is_selected = st.checkbox(
+                                col_name,
+                                value=True,
+                                key=f"ref_compare_{col_name}",
+                                help=f"Compute difference for {col_name}"
+                            )
+                            
+                            if is_selected:
+                                selected_cols.append(col_name)
+            
+            if not selected_cols:
+                st.info("Select at least one column to compute differences.")
+                return df
+            
+            # Step 3: Compute differences
+            st.markdown(f"**Step 3: Computing Differences** ({len(selected_cols)} columns)")
+            
+            result_df = df.copy()
+            
+            for col_name in selected_cols:
+                diff_col_name = f"{col_name}_diff"
+                try:
+                    # Compute difference: current_row_value - reference_row_value
+                    result_df[diff_col_name] = result_df[col_name] - ref_row[col_name]
+                except Exception as e:
+                    st.warning(f"Could not compute difference for '{col_name}': {str(e)}")
+            
+            # Show summary
+            new_cols = [f"{col}_diff" for col in selected_cols]
+            st.success(f"✓ Added {len(new_cols)} difference columns: {', '.join(new_cols[:3])}" + 
+                      (f" ... (+{len(new_cols)-3} more)" if len(new_cols) > 3 else ""))
+            
+            return result_df
+        
+        return df
     
     def _render_search_and_filters(self, df: pd.DataFrame, column_metadata: Dict[str, Any]) -> pd.DataFrame:
         """
