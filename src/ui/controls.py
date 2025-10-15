@@ -108,9 +108,9 @@ class TableControls:
         if show_filters:
             self._render_column_filters(df, column_metadata)
         
-        # Show active filters summary
-        if self.search_term or self.column_filters:
-            self._show_active_filters_summary()
+        # # Show active filters summary
+        # if self.search_term or self.column_filters:
+        #     self._show_active_filters_summary()
         
         # Apply search filter
         filtered_df = df.copy()
@@ -132,12 +132,6 @@ class TableControls:
             column_metadata: Column metadata
         """
         st.markdown("#### Column Filters")
-        
-        # Display active filter rules first
-        if self.column_filters:
-            st.markdown("**🔧 Active Filter Rules:**")
-            self._render_active_filter_rules(df)
-            st.markdown("---")
         
         # Get filterable columns (exclude image columns)
         filterable_columns = []
@@ -167,12 +161,22 @@ class TableControls:
             # Show column info
             if selected_column != "-- Select a column --":
                 unique_count = df[selected_column].nunique()
-                st.caption(f"📊 {unique_count} unique values")
+                null_count = df[selected_column].isna().sum()
+                if null_count > 0:
+                    st.caption(f"📊 {unique_count} unique + {null_count} null")
+                else:
+                    st.caption(f"📊 {unique_count} unique values")
         
         # If a column is selected, show filter controls
         if selected_column != "-- Select a column --":
             self._render_add_filter_rule_interface(df, selected_column, column_metadata)
-    
+        
+        # Display active filter rules first
+        if self.column_filters:
+            st.markdown("**🔧 Active Filter Rules:**")
+            self._render_active_filter_rules(df)
+            st.markdown("---")
+        
     def _render_active_filter_rules(self, df: pd.DataFrame) -> None:
         """
         Display active filter rules with delete buttons.
@@ -180,9 +184,14 @@ class TableControls:
         Args:
             df: DataFrame being filtered
         """
-        rules_to_delete = []
+        # Create a copy of keys to avoid modification during iteration
+        filter_columns = list(self.column_filters.keys())
         
-        for col_name, filter_config in self.column_filters.items():
+        for col_name in filter_columns:
+            filter_config = self.column_filters.get(col_name)
+            if not filter_config:
+                continue
+                
             col1, col2, col3 = st.columns([2, 4, 1])
             
             with col1:
@@ -195,14 +204,10 @@ class TableControls:
             
             with col3:
                 if st.button("🗑️", key=f"delete_rule_{col_name}", help=f"Delete filter for {col_name}"):
-                    rules_to_delete.append(col_name)
-        
-        # Delete rules after iteration
-        for col_name in rules_to_delete:
-            # Explicitly delete from session state
-            if col_name in st.session_state.column_filters:
-                del st.session_state.column_filters[col_name]
-            st.rerun()
+                    # Delete immediately from session state and rerun
+                    if col_name in st.session_state.column_filters:
+                        del st.session_state.column_filters[col_name]
+                    st.rerun()
     
     def _get_filter_rule_description(self, filter_config: Dict[str, Any]) -> str:
         """
@@ -216,7 +221,13 @@ class TableControls:
         """
         operation = filter_config.get('operation', 'equals')
         
-        if operation in ["equals", "contains", "starts with", "ends with"]:
+        if operation == "is null":
+            return "is null (empty/None)"
+        
+        elif operation == "is not null":
+            return "is not null (has value)"
+        
+        elif operation in ["equals", "contains", "starts with", "ends with"]:
             values = filter_config.get('values', [])
             if values:
                 value_str = ", ".join(map(str, values[:3]))
@@ -251,7 +262,8 @@ class TableControls:
         if 'temp_filter_config' not in st.session_state:
             st.session_state.temp_filter_config = {}
         
-        # Get column properties
+        # Get column properties (include NaN values for discrete columns)
+        has_null = df[col_name].isna().any()
         unique_values = df[col_name].dropna().unique()
         is_numeric = pd.api.types.is_numeric_dtype(df[col_name])
         is_discrete = len(unique_values) <= 20
@@ -264,7 +276,7 @@ class TableControls:
             rule_config = self._render_continuous_filter_builder(df, col_name)
         else:
             # Discrete column
-            rule_config = self._render_discrete_filter_builder(df, col_name, unique_values, is_numeric)
+            rule_config = self._render_discrete_filter_builder(df, col_name, unique_values, is_numeric, has_null)
         
         # Add Rule button
         col1, col2, col3 = st.columns([1, 1, 2])
@@ -379,24 +391,25 @@ class TableControls:
             }
     
     def _render_discrete_filter_builder(self, df: pd.DataFrame, col_name: str,
-                                       unique_values: np.ndarray, is_numeric: bool) -> Optional[Dict[str, Any]]:
+                                       unique_values: np.ndarray, is_numeric: bool, has_null: bool) -> Optional[Dict[str, Any]]:
         """
         Render filter builder for discrete columns and return configuration.
         
         Args:
             df: DataFrame containing the column
             col_name: Name of the column
-            unique_values: Array of unique values
+            unique_values: Array of unique values (excluding NaN)
             is_numeric: Whether the column is numeric
+            has_null: Whether the column contains null values
             
         Returns:
             Filter configuration dict or None
         """
         # Filter operation options depend on whether column is numeric
         if is_numeric:
-            filter_options = ["equals", "greater than", "less than"]
+            filter_options = ["equals", "is null", "is not null", "greater than", "less than"]
         else:
-            filter_options = ["equals", "contains", "starts with", "ends with"]
+            filter_options = ["equals", "is null", "is not null", "contains", "starts with", "ends with"]
         
         filter_op = st.selectbox(
             "Operation",
@@ -405,12 +418,28 @@ class TableControls:
             help=f"Choose how to filter {col_name}"
         )
         
+        # Handle null filtering operations
+        if filter_op == "is null":
+            return {
+                'operation': 'is null'
+            }
+        
+        if filter_op == "is not null":
+            return {
+                'operation': 'is not null'
+            }
+        
         if filter_op in ["equals", "contains", "starts with", "ends with"]:
+            # Add None option if column has null values
+            options_list = list(unique_values)
+            if has_null:
+                options_list = ["(None)"] + options_list
+            
             selected_values = st.multiselect(
                 "Values",
-                options=unique_values,
+                options=options_list,
                 key=f"filter_values_builder_{col_name}",
-                help=f"Select values to filter {col_name}"
+                help=f"Select values to filter {col_name}. Select '(None)' to filter for null/empty values."
             )
             
             if selected_values:
@@ -491,27 +520,79 @@ class TableControls:
                 
             operation = filter_config.get('operation', 'equals')
             
-            if operation == "equals":
+            if operation == "is null":
+                filtered_df = filtered_df[filtered_df[col_name].isna()]
+            
+            elif operation == "is not null":
+                filtered_df = filtered_df[filtered_df[col_name].notna()]
+            
+            elif operation == "equals":
                 values = filter_config.get('values', [])
                 if values:
-                    filtered_df = filtered_df[filtered_df[col_name].isin(values)]
+                    # Separate None and non-None values
+                    none_selected = "(None)" in values
+                    actual_values = [v for v in values if v != "(None)"]
+                    
+                    if none_selected and actual_values:
+                        # Include both null and specified values
+                        mask = filtered_df[col_name].isna() | filtered_df[col_name].isin(actual_values)
+                        filtered_df = filtered_df[mask]
+                    elif none_selected:
+                        # Only null values
+                        filtered_df = filtered_df[filtered_df[col_name].isna()]
+                    else:
+                        # Only actual values
+                        filtered_df = filtered_df[filtered_df[col_name].isin(actual_values)]
                     
             elif operation == "contains":
                 values = filter_config.get('values', [])
                 if values:
-                    mask = filtered_df[col_name].astype(str).str.contains('|'.join(values), case=False, na=False)
+                    # Separate None and non-None values
+                    none_selected = "(None)" in values
+                    actual_values = [v for v in values if v != "(None)"]
+                    
+                    if actual_values:
+                        mask = filtered_df[col_name].astype(str).str.contains('|'.join(actual_values), case=False, na=False)
+                    else:
+                        mask = pd.Series([False] * len(filtered_df), index=filtered_df.index)
+                    
+                    if none_selected:
+                        mask = mask | filtered_df[col_name].isna()
+                    
                     filtered_df = filtered_df[mask]
                     
             elif operation == "starts with":
                 values = filter_config.get('values', [])
                 if values:
-                    mask = filtered_df[col_name].astype(str).str.startswith(tuple(values), na=False)
+                    # Separate None and non-None values
+                    none_selected = "(None)" in values
+                    actual_values = [v for v in values if v != "(None)"]
+                    
+                    if actual_values:
+                        mask = filtered_df[col_name].astype(str).str.startswith(tuple(actual_values), na=False)
+                    else:
+                        mask = pd.Series([False] * len(filtered_df), index=filtered_df.index)
+                    
+                    if none_selected:
+                        mask = mask | filtered_df[col_name].isna()
+                    
                     filtered_df = filtered_df[mask]
                     
             elif operation == "ends with":
                 values = filter_config.get('values', [])
                 if values:
-                    mask = filtered_df[col_name].astype(str).str.endswith(tuple(values), na=False)
+                    # Separate None and non-None values
+                    none_selected = "(None)" in values
+                    actual_values = [v for v in values if v != "(None)"]
+                    
+                    if actual_values:
+                        mask = filtered_df[col_name].astype(str).str.endswith(tuple(actual_values), na=False)
+                    else:
+                        mask = pd.Series([False] * len(filtered_df), index=filtered_df.index)
+                    
+                    if none_selected:
+                        mask = mask | filtered_df[col_name].isna()
+                    
                     filtered_df = filtered_df[mask]
                     
             elif operation == "greater than":
@@ -697,41 +778,41 @@ class TableControls:
             export_df[col] = export_df[col].apply(lambda x: str(x) if hasattr(x, 'shape') else x)
         return export_df
     
-    def _show_active_filters_summary(self) -> None:
-        """
-        Display a summary of currently active filters.
-        """
-        st.markdown("#### Active Filters")
+    # def _show_active_filters_summary(self) -> None:
+    #     """
+    #     Display a summary of currently active filters.
+    #     """
+    #     st.markdown("#### Active Filters")
         
-        active_filters = []
+    #     active_filters = []
         
-        if self.search_term:
-            active_filters.append(f"**Search**: '{self.search_term}'")
+    #     if self.search_term:
+    #         active_filters.append(f"**Search**: '{self.search_term}'")
         
-        for col_name, filter_config in self.column_filters.items():
-            operation = filter_config.get('operation', 'equals')
+    #     for col_name, filter_config in self.column_filters.items():
+    #         operation = filter_config.get('operation', 'equals')
             
-            if operation in ["equals", "contains", "starts with", "ends with"]:
-                values = filter_config.get('values', [])
-                if values:
-                    active_filters.append(f"**{col_name}** {operation}: {', '.join(map(str, values))}")
+    #         if operation in ["equals", "contains", "starts with", "ends with"]:
+    #             values = filter_config.get('values', [])
+    #             if values:
+    #                 active_filters.append(f"**{col_name}** {operation}: {', '.join(map(str, values))}")
                     
-            elif operation in ["greater than", "less than"]:
-                threshold = filter_config.get('threshold')
-                if threshold is not None:
-                    active_filters.append(f"**{col_name}** {operation} {threshold:.4g}")
+    #         elif operation in ["greater than", "less than"]:
+    #             threshold = filter_config.get('threshold')
+    #             if threshold is not None:
+    #                 active_filters.append(f"**{col_name}** {operation} {threshold:.4g}")
             
-            elif operation == "between":
-                lower_bound = filter_config.get('lower_bound')
-                upper_bound = filter_config.get('upper_bound')
-                if lower_bound is not None and upper_bound is not None:
-                    active_filters.append(f"**{col_name}** between [{lower_bound:.4g}, {upper_bound:.4g}]")
+    #         elif operation == "between":
+    #             lower_bound = filter_config.get('lower_bound')
+    #             upper_bound = filter_config.get('upper_bound')
+    #             if lower_bound is not None and upper_bound is not None:
+    #                 active_filters.append(f"**{col_name}** between [{lower_bound:.4g}, {upper_bound:.4g}]")
         
-        if active_filters:
-            for filter_desc in active_filters:
-                st.markdown(f"• {filter_desc}")
-        else:
-            st.markdown("*No active filters*")
+    #     if active_filters:
+    #         for filter_desc in active_filters:
+    #             st.markdown(f"• {filter_desc}")
+    #     else:
+    #         st.markdown("*No active filters*")
     
     def _render_export_controls(self, df: pd.DataFrame) -> None:
         """
