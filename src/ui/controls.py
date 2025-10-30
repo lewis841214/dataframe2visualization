@@ -501,26 +501,32 @@ class TableControls:
         filter_columns = list(self.column_filters.keys())
         
         for col_name in filter_columns:
-            filter_config = self.column_filters.get(col_name)
-            if not filter_config:
+            configs = self.column_filters.get(col_name)
+            if not configs:
                 continue
-                
-            col1, col2, col3 = st.columns([2, 4, 1])
+            # Normalize to list for display
+            config_list = configs if isinstance(configs, list) else [configs]
             
-            with col1:
-                st.write(f"**{col_name}**")
-            
-            with col2:
-                # Display rule description
-                rule_desc = self._get_filter_rule_description(filter_config)
-                st.write(rule_desc)
-            
-            with col3:
-                if st.button("🗑️", key=f"delete_rule_{col_name}", help=f"Delete filter for {col_name}"):
-                    # Delete immediately from session state and rerun
-                    if col_name in st.session_state.column_filters:
-                        del st.session_state.column_filters[col_name]
-                    st.rerun()
+            st.write(f"**{col_name}**")
+            for idx, cfg in enumerate(config_list):
+                col1, col2 = st.columns([6, 1])
+                with col1:
+                    rule_desc = self._get_filter_rule_description(cfg)
+                    st.write(f"- {rule_desc}")
+                with col2:
+                    if st.button("🗑️", key=f"delete_rule_{col_name}_{idx}", help=f"Delete rule #{idx+1} for {col_name}"):
+                        # Delete rule at index
+                        if col_name in st.session_state.column_filters:
+                            existing = st.session_state.column_filters[col_name]
+                            if isinstance(existing, list):
+                                if 0 <= idx < len(existing):
+                                    existing.pop(idx)
+                                if not existing:
+                                    del st.session_state.column_filters[col_name]
+                            else:
+                                # Single rule case
+                                del st.session_state.column_filters[col_name]
+                        st.rerun()
     
     def _get_filter_rule_description(self, filter_config: Dict[str, Any]) -> str:
         """
@@ -597,8 +603,15 @@ class TableControls:
         with col1:
             if st.button("➕ Add Rule", key="add_filter_rule_btn", type="primary"):
                 if rule_config:
-                    # Explicitly update session state
-                    st.session_state.column_filters[col_name] = rule_config
+                    # Append rule instead of overwrite; support multiple per column
+                    if col_name in st.session_state.column_filters:
+                        existing = st.session_state.column_filters[col_name]
+                        if isinstance(existing, list):
+                            existing.append(rule_config)
+                        else:
+                            st.session_state.column_filters[col_name] = [existing, rule_config]
+                    else:
+                        st.session_state.column_filters[col_name] = [rule_config]
                     # Success message will flash briefly before rerun
                     st.success(f"✅ Filter rule added for {col_name}")
                     st.rerun()
@@ -831,16 +844,20 @@ class TableControls:
             if col_name not in filtered_df.columns:
                 continue
                 
-            operation = filter_config.get('operation', 'equals')
+            # Normalize to list for application (apply all rules with AND)
+            configs = filter_config if isinstance(filter_config, list) else [filter_config]
             
-            if operation == "is null":
-                filtered_df = filtered_df[filtered_df[col_name].isna()]
+            for cfg in configs:
+                operation = cfg.get('operation', 'equals')
             
-            elif operation == "is not null":
-                filtered_df = filtered_df[filtered_df[col_name].notna()]
-            
-            elif operation == "equals":
-                values = filter_config.get('values', [])
+                if operation == "is null":
+                    filtered_df = filtered_df[filtered_df[col_name].isna()]
+                
+                elif operation == "is not null":
+                    filtered_df = filtered_df[filtered_df[col_name].notna()]
+                
+                elif operation == "equals":
+                    values = cfg.get('values', [])
                 if values:
                     # Separate None and non-None values
                     none_selected = "(None)" in values
@@ -856,9 +873,9 @@ class TableControls:
                     else:
                         # Only actual values
                         filtered_df = filtered_df[filtered_df[col_name].isin(actual_values)]
-                    
-            elif operation == "contains":
-                values = filter_config.get('values', [])
+                
+                elif operation == "contains":
+                    values = cfg.get('values', [])
                 if values:
                     # Separate None and non-None values
                     none_selected = "(None)" in values
@@ -873,9 +890,9 @@ class TableControls:
                         mask = mask | filtered_df[col_name].isna()
                     
                     filtered_df = filtered_df[mask]
-                    
-            elif operation == "starts with":
-                values = filter_config.get('values', [])
+                
+                elif operation == "starts with":
+                    values = cfg.get('values', [])
                 if values:
                     # Separate None and non-None values
                     none_selected = "(None)" in values
@@ -890,9 +907,9 @@ class TableControls:
                         mask = mask | filtered_df[col_name].isna()
                     
                     filtered_df = filtered_df[mask]
-                    
-            elif operation == "ends with":
-                values = filter_config.get('values', [])
+                
+                elif operation == "ends with":
+                    values = cfg.get('values', [])
                 if values:
                     # Separate None and non-None values
                     none_selected = "(None)" in values
@@ -907,25 +924,25 @@ class TableControls:
                         mask = mask | filtered_df[col_name].isna()
                     
                     filtered_df = filtered_df[mask]
-                    
-            elif operation == "greater than":
-                threshold = filter_config.get('threshold')
-                if threshold is not None:
-                    filtered_df = filtered_df[filtered_df[col_name] > threshold]
-                    
-            elif operation == "less than":
-                threshold = filter_config.get('threshold')
-                if threshold is not None:
-                    filtered_df = filtered_df[filtered_df[col_name] < threshold]
-            
-            elif operation == "between":
-                lower_bound = filter_config.get('lower_bound')
-                upper_bound = filter_config.get('upper_bound')
-                if lower_bound is not None and upper_bound is not None:
-                    filtered_df = filtered_df[
-                        (filtered_df[col_name] >= lower_bound) & 
-                        (filtered_df[col_name] <= upper_bound)
-                    ]
+                
+                elif operation == "greater than":
+                    threshold = cfg.get('threshold')
+                    if threshold is not None:
+                        filtered_df = filtered_df[filtered_df[col_name] > threshold]
+                        
+                elif operation == "less than":
+                    threshold = cfg.get('threshold')
+                    if threshold is not None:
+                        filtered_df = filtered_df[filtered_df[col_name] < threshold]
+                
+                elif operation == "between":
+                    lower_bound = cfg.get('lower_bound')
+                    upper_bound = cfg.get('upper_bound')
+                    if lower_bound is not None and upper_bound is not None:
+                        filtered_df = filtered_df[
+                            (filtered_df[col_name] >= lower_bound) & 
+                            (filtered_df[col_name] <= upper_bound)
+                        ]
         
         return filtered_df
     
