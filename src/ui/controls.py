@@ -858,7 +858,7 @@ class TableControls:
                 
                 elif operation == "equals":
                     values = cfg.get('values', [])
-                if values:
+                    if values:
                     # Separate None and non-None values
                     none_selected = "(None)" in values
                     actual_values = [v for v in values if v != "(None)"]
@@ -876,7 +876,7 @@ class TableControls:
                 
                 elif operation == "contains":
                     values = cfg.get('values', [])
-                if values:
+                    if values:
                     # Separate None and non-None values
                     none_selected = "(None)" in values
                     actual_values = [v for v in values if v != "(None)"]
@@ -893,7 +893,7 @@ class TableControls:
                 
                 elif operation == "starts with":
                     values = cfg.get('values', [])
-                if values:
+                    if values:
                     # Separate None and non-None values
                     none_selected = "(None)" in values
                     actual_values = [v for v in values if v != "(None)"]
@@ -910,7 +910,7 @@ class TableControls:
                 
                 elif operation == "ends with":
                     values = cfg.get('values', [])
-                if values:
+                    if values:
                     # Separate None and non-None values
                     none_selected = "(None)" in values
                     actual_values = [v for v in values if v != "(None)"]
