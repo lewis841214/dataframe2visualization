@@ -413,7 +413,7 @@ class InteractiveTableDisplay:
         st.markdown("**📊 Plot Type Selection**")
         plot_type = st.radio(
             "Select Plot Type",
-            ["1D Histogram", "2D Scatter Plot", "3D Scatter Plot"],
+            ["1D Histogram", "1D CDF", "2D Scatter Plot", "3D Scatter Plot"],
             key="plot_type_selector",
             horizontal=True
         )
@@ -453,6 +453,39 @@ class InteractiveTableDisplay:
                 # Create and display histogram
                 with st.spinner(f"Generating histogram for {len(df)} data points..."):
                     self._create_histogram(df, selected_col1, hist_stats)
+        
+        elif plot_type == "1D CDF":
+            # Single column selection for CDF
+            selected_col1 = st.selectbox(
+                "Select Column for CDF",
+                numeric_cols,
+                key="cdf_col"
+            )
+            
+            selected_col2 = None
+            selected_col3 = None
+            
+            # Validate and create CDF
+            if selected_col1:
+                is_valid, error_msg = self._validate_column_for_histogram(df, selected_col1)
+                
+                if not is_valid:
+                    st.error(f"❌ {error_msg}")
+                    return
+                
+                # Calculate statistics (reuse histogram stats)
+                hist_stats = self._calculate_histogram_statistics(df, selected_col1)
+                
+                if not hist_stats:
+                    st.error("❌ Unable to calculate statistics.")
+                    return
+                
+                # Display statistics
+                self._display_histogram_statistics(hist_stats, selected_col1)
+                
+                # Create and display CDF
+                with st.spinner(f"Generating CDF for {len(df)} data points..."):
+                    self._create_cdf(df, selected_col1, hist_stats)
         
         elif plot_type == "2D Scatter Plot":
             # Check for sufficient columns
@@ -1476,6 +1509,159 @@ class InteractiveTableDisplay:
                 label="📈 Download Statistics CSV",
                 data=csv,
                 file_name=f"histogram_statistics_{col}.csv",
+                mime="text/csv"
+            )
+    
+    def _create_cdf(self, df: pd.DataFrame, col: str, stats: Dict[str, Any]) -> None:
+        """Create and display empirical CDF with customization options."""
+        st.subheader("📊 Empirical CDF")
+        
+        valid_data = df[col].dropna()
+        if len(valid_data) == 0:
+            st.error("❌ No valid data points found.")
+            return
+        
+        # CDF customization options
+        st.markdown("**🎨 CDF Options**")
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            line_color = st.color_picker("Line Color", "#1f77b4", key="cdf_color")
+        with col2:
+            show_markers = st.checkbox("Show Markers", value=False, key="cdf_markers")
+        with col3:
+            show_percentiles = st.checkbox("Show 25/50/75% Lines", value=True, key="cdf_percentiles")
+        
+        # Plot size controls
+        size_col1, size_col2 = st.columns(2)
+        with size_col1:
+            plot_width = st.slider("Plot Width (inches)", min_value=6, max_value=16, value=10, key="cdf_width")
+        with size_col2:
+            plot_height = st.slider("Plot Height (inches)", min_value=4, max_value=12, value=6, key="cdf_height")
+        
+        st.info(f"📐 Current plot size: {plot_width} × {plot_height} inches")
+        
+        # Render CDF
+        self._render_cdf_plot(
+            valid_data, col, stats, line_color, show_markers, show_percentiles, plot_width, plot_height
+        )
+        
+        # Download options
+        self._add_cdf_download_options(
+            valid_data, col, stats, line_color, show_markers, show_percentiles, plot_width, plot_height
+        )
+    
+    def _render_cdf_plot(self, data: pd.Series, col: str, stats: Dict[str, Any],
+                         line_color: str, show_markers: bool, show_percentiles: bool,
+                         width: int, height: int) -> None:
+        """Render the empirical CDF plot."""
+        sns.set_theme(style="whitegrid")
+        
+        sorted_vals = np.sort(data.values)
+        n = len(sorted_vals)
+        y = np.arange(1, n + 1) / n
+        
+        fig, ax = plt.subplots(figsize=(width, height))
+        
+        ax.plot(
+            sorted_vals,
+            y,
+            color=line_color,
+            linewidth=2,
+            marker='o' if show_markers else None,
+            markersize=3 if show_markers else 0,
+            label='Empirical CDF'
+        )
+        
+        if show_percentiles:
+            q25 = stats['q25']
+            q50 = stats['median']
+            q75 = stats['q75']
+            for q_val, q_label in [(q25, '25%'), (q50, '50%'), (q75, '75%')]:
+                ax.axvline(q_val, color='purple', linestyle=':', linewidth=1.5, alpha=0.7, label=f"{q_label} = {q_val:.3f}")
+        
+        ax.set_xlabel(col, fontsize=12, fontweight='bold')
+        ax.set_ylabel('Cumulative Probability', fontsize=12, fontweight='bold')
+        ax.set_title(f'Empirical CDF: {col}', fontsize=14, fontweight='bold')
+        ax.grid(True, alpha=0.3)
+        
+        ax.legend(loc='best', fontsize=10)
+        
+        stats_text = f"n = {stats['n_points']:,}\nμ = {stats['mean']:.3f}\nσ = {stats['std']:.3f}\nRange = {stats['range']:.3f}"
+        ax.text(0.98, 0.02, stats_text, transform=ax.transAxes,
+               verticalalignment='bottom', horizontalalignment='right',
+               bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.9),
+               fontsize=10)
+        
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close(fig)
+    
+    def _add_cdf_download_options(self, data: pd.Series, col: str, stats: Dict[str, Any],
+                                   line_color: str, show_markers: bool, show_percentiles: bool,
+                                   width: int, height: int) -> None:
+        """Add download options for CDF plot."""
+        st.markdown("**📥 Download Options**")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("📈 Download CDF as PNG"):
+                sns.set_theme(style="whitegrid")
+                
+                sorted_vals = np.sort(data.values)
+                n = len(sorted_vals)
+                y = np.arange(1, n + 1) / n
+                
+                fig, ax = plt.subplots(figsize=(width, height))
+                ax.plot(
+                    sorted_vals,
+                    y,
+                    color=line_color,
+                    linewidth=2,
+                    marker='o' if show_markers else None,
+                    markersize=3 if show_markers else 0,
+                    label='Empirical CDF'
+                )
+                if show_percentiles:
+                    q25 = stats['q25']
+                    q50 = stats['median']
+                    q75 = stats['q75']
+                    for q_val, q_label in [(q25, '25%'), (q50, '50%'), (q75, '75%')]:
+                        ax.axvline(q_val, color='purple', linestyle=':', linewidth=1.5, alpha=0.7, label=f"{q_label} = {q_val:.3f}")
+                ax.set_xlabel(col, fontsize=12, fontweight='bold')
+                ax.set_ylabel('Cumulative Probability', fontsize=12, fontweight='bold')
+                ax.set_title(f'Empirical CDF: {col}', fontsize=14, fontweight='bold')
+                ax.grid(True, alpha=0.3)
+                ax.legend(loc='best', fontsize=10)
+                
+                stats_text = f"n = {stats['n_points']:,}\nμ = {stats['mean']:.3f}\nσ = {stats['std']:.3f}\nRange = {stats['range']:.3f}"
+                ax.text(0.98, 0.02, stats_text, transform=ax.transAxes,
+                       verticalalignment='bottom', horizontalalignment='right',
+                       bbox=dict(boxstyle='round', facecolor='lightyellow', alpha=0.9),
+                       fontsize=10)
+                
+                plt.tight_layout()
+                
+                import io
+                buf = io.BytesIO()
+                fig.savefig(buf, format='png', dpi=300, bbox_inches='tight')
+                buf.seek(0)
+                
+                st.download_button(
+                    label="Click to download PNG",
+                    data=buf.getvalue(),
+                    file_name=f"cdf_{col}.png",
+                    mime="image/png"
+                )
+                plt.close(fig)
+        
+        with col2:
+            stats_df = pd.DataFrame([stats])
+            csv = stats_df.to_csv(index=False)
+            st.download_button(
+                label="📈 Download Statistics CSV",
+                data=csv,
+                file_name=f"cdf_statistics_{col}.csv",
                 mime="text/csv"
             )
     
