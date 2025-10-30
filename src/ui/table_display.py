@@ -1532,6 +1532,24 @@ class InteractiveTableDisplay:
         with col3:
             show_percentiles = st.checkbox("Show 25/50/75% Lines", value=True, key="cdf_percentiles")
         
+        # Optional max cap
+        st.markdown("**🔧 Value Capping**")
+        cap_col1, cap_col2 = st.columns(2)
+        with cap_col1:
+            enable_cap = st.checkbox("Enable max value cap", value=False, key="cdf_enable_cap")
+        with cap_col2:
+            cap_value = st.number_input(
+                "Max value (values > max will be set to max)",
+                min_value=float(valid_data.min()) if len(valid_data) else 0.0,
+                value=float(min(200.0, float(valid_data.max()))) if len(valid_data) else 200.0,
+                step=1.0,
+                key="cdf_cap_value"
+            )
+        
+        processed_data = valid_data.clip(upper=cap_value) if enable_cap else valid_data
+        if enable_cap:
+            st.info(f"Values greater than {cap_value:.6g} are set to {cap_value:.6g} for this CDF.")
+
         # Plot size controls
         size_col1, size_col2 = st.columns(2)
         with size_col1:
@@ -1543,12 +1561,12 @@ class InteractiveTableDisplay:
         
         # Render CDF
         self._render_cdf_plot(
-            valid_data, col, stats, line_color, show_markers, show_percentiles, plot_width, plot_height
+            processed_data, col, stats, line_color, show_markers, show_percentiles, plot_width, plot_height
         )
         
         # Download options
         self._add_cdf_download_options(
-            valid_data, col, stats, line_color, show_markers, show_percentiles, plot_width, plot_height
+            processed_data, col, stats, line_color, show_markers, show_percentiles, plot_width, plot_height
         )
     
     def _render_cdf_plot(self, data: pd.Series, col: str, stats: Dict[str, Any],
