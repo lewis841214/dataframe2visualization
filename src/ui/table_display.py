@@ -413,7 +413,7 @@ class InteractiveTableDisplay:
         st.markdown("**📊 Plot Type Selection**")
         plot_type = st.radio(
             "Select Plot Type",
-            ["1D Histogram", "1D CDF", "2D Scatter Plot", "3D Scatter Plot"],
+            ["1D CDF", "1D Histogram",  "2D Scatter Plot", "3D Scatter Plot"],
             key="plot_type_selector",
             horizontal=True
         )
