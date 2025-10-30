@@ -859,71 +859,71 @@ class TableControls:
                 elif operation == "equals":
                     values = cfg.get('values', [])
                     if values:
-                    # Separate None and non-None values
-                    none_selected = "(None)" in values
-                    actual_values = [v for v in values if v != "(None)"]
-                    
-                    if none_selected and actual_values:
-                        # Include both null and specified values
-                        mask = filtered_df[col_name].isna() | filtered_df[col_name].isin(actual_values)
-                        filtered_df = filtered_df[mask]
-                    elif none_selected:
-                        # Only null values
-                        filtered_df = filtered_df[filtered_df[col_name].isna()]
-                    else:
-                        # Only actual values
-                        filtered_df = filtered_df[filtered_df[col_name].isin(actual_values)]
+                        # Separate None and non-None values
+                        none_selected = "(None)" in values
+                        actual_values = [v for v in values if v != "(None)"]
+                        
+                        if none_selected and actual_values:
+                            # Include both null and specified values
+                            mask = filtered_df[col_name].isna() | filtered_df[col_name].isin(actual_values)
+                            filtered_df = filtered_df[mask]
+                        elif none_selected:
+                            # Only null values
+                            filtered_df = filtered_df[filtered_df[col_name].isna()]
+                        else:
+                            # Only actual values
+                            filtered_df = filtered_df[filtered_df[col_name].isin(actual_values)]
                 
                 elif operation == "contains":
                     values = cfg.get('values', [])
                     if values:
-                    # Separate None and non-None values
-                    none_selected = "(None)" in values
-                    actual_values = [v for v in values if v != "(None)"]
-                    
-                    if actual_values:
-                        mask = filtered_df[col_name].astype(str).str.contains('|'.join(actual_values), case=False, na=False)
-                    else:
-                        mask = pd.Series([False] * len(filtered_df), index=filtered_df.index)
-                    
-                    if none_selected:
-                        mask = mask | filtered_df[col_name].isna()
-                    
-                    filtered_df = filtered_df[mask]
+                        # Separate None and non-None values
+                        none_selected = "(None)" in values
+                        actual_values = [v for v in values if v != "(None)"]
+                        
+                        if actual_values:
+                            mask = filtered_df[col_name].astype(str).str.contains('|'.join(actual_values), case=False, na=False)
+                        else:
+                            mask = pd.Series([False] * len(filtered_df), index=filtered_df.index)
+                        
+                        if none_selected:
+                            mask = mask | filtered_df[col_name].isna()
+                        
+                        filtered_df = filtered_df[mask]
                 
                 elif operation == "starts with":
                     values = cfg.get('values', [])
                     if values:
-                    # Separate None and non-None values
-                    none_selected = "(None)" in values
-                    actual_values = [v for v in values if v != "(None)"]
-                    
-                    if actual_values:
-                        mask = filtered_df[col_name].astype(str).str.startswith(tuple(actual_values), na=False)
-                    else:
-                        mask = pd.Series([False] * len(filtered_df), index=filtered_df.index)
-                    
-                    if none_selected:
-                        mask = mask | filtered_df[col_name].isna()
-                    
-                    filtered_df = filtered_df[mask]
+                        # Separate None and non-None values
+                        none_selected = "(None)" in values
+                        actual_values = [v for v in values if v != "(None)"]
+                        
+                        if actual_values:
+                            mask = filtered_df[col_name].astype(str).str.startswith(tuple(actual_values), na=False)
+                        else:
+                            mask = pd.Series([False] * len(filtered_df), index=filtered_df.index)
+                        
+                        if none_selected:
+                            mask = mask | filtered_df[col_name].isna()
+                        
+                        filtered_df = filtered_df[mask]
                 
                 elif operation == "ends with":
                     values = cfg.get('values', [])
                     if values:
-                    # Separate None and non-None values
-                    none_selected = "(None)" in values
-                    actual_values = [v for v in values if v != "(None)"]
-                    
-                    if actual_values:
-                        mask = filtered_df[col_name].astype(str).str.endswith(tuple(actual_values), na=False)
-                    else:
-                        mask = pd.Series([False] * len(filtered_df), index=filtered_df.index)
-                    
-                    if none_selected:
-                        mask = mask | filtered_df[col_name].isna()
-                    
-                    filtered_df = filtered_df[mask]
+                        # Separate None and non-None values
+                        none_selected = "(None)" in values
+                        actual_values = [v for v in values if v != "(None)"]
+                        
+                        if actual_values:
+                            mask = filtered_df[col_name].astype(str).str.endswith(tuple(actual_values), na=False)
+                        else:
+                            mask = pd.Series([False] * len(filtered_df), index=filtered_df.index)
+                        
+                        if none_selected:
+                            mask = mask | filtered_df[col_name].isna()
+                        
+                        filtered_df = filtered_df[mask]
                 
                 elif operation == "greater than":
                     threshold = cfg.get('threshold')
